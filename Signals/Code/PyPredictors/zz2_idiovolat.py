@@ -1,11 +1,11 @@
 """
-ZZ2_BetaVIX Predictor Implementation
+ZZ2_IdioVolat Predictor Implementation
 
-This script implements the BetaVIX predictor:
-- BetaVIX: Systematic volatility measure based on VIX sensitivity
+This script implements the IdioVolAHT predictor:
+- IdioVolAHT: Idiosyncratic volatility measure based on Ali et al (2003)
 
-The script calculates a beta measure that captures a stock's sensitivity to VIX changes,
-representing systematic volatility risk using rolling regressions.
+The script calculates idiosyncratic volatility using the root mean squared error
+from CAPM regressions, following the methodology cited in HXZ.
 """
 
 import pandas as pd
@@ -18,19 +18,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def main():
-    """Main function to calculate BetaVIX predictor."""
+    """Main function to calculate IdioVolAHT predictor."""
     
     # Define file paths
     base_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data")
     daily_crsp_path = base_path / "Intermediate" / "dailyCRSP.csv"
     daily_ff_path = base_path / "Intermediate" / "dailyFF.csv"
-    daily_vix_path = base_path / "Intermediate" / "d_vix.csv"
     output_path = base_path / "Predictors"
     
     # Ensure output directory exists
     output_path.mkdir(parents=True, exist_ok=True)
     
-    logger.info("Starting BetaVIX predictor calculation")
+    logger.info("Starting IdioVolAHT predictor calculation")
     
     try:
         # DATA LOAD
@@ -46,11 +45,6 @@ def main():
         data['ret'] = data['ret'] - data['rf']
         data = data.drop('rf', axis=1)
         
-        # Merge with VIX data
-        logger.info("Merging with VIX data")
-        vix_data = pd.read_csv(daily_vix_path, usecols=['time_d', 'dVIX'])
-        data = data.merge(vix_data, on='time_d', how='inner')
-        
         # Convert time_d to datetime
         data['time_d'] = pd.to_datetime(data['time_d'])
         
@@ -58,41 +52,45 @@ def main():
         data = data.sort_values(['permno', 'time_d'])
         
         # SIGNAL CONSTRUCTION
-        logger.info("Setting up CAPM regression for systematic volatility")
+        logger.info("Calculating idiosyncratic volatility")
         
         # Create time index for each permno
         data['time_temp'] = data.groupby('permno').cumcount() + 1
         
-        # Initialize BetaVIX
-        data['betaVIX'] = np.nan
+        # Initialize IdioVolAHT
+        data['IdioVolAHT'] = np.nan
         
         # Run rolling regressions for each firm
-        logger.info("Running rolling regressions for BetaVIX calculation")
+        logger.info("Running rolling CAPM regressions")
         for permno in data['permno'].unique():
             firm_data = data[data['permno'] == permno].copy()
             
-            if len(firm_data) >= 15:  # Need at least 15 observations
-                for i in range(19, len(firm_data)):  # Start from 20th observation
-                    window_data = firm_data.iloc[i-19:i+1]  # 20-day window
+            if len(firm_data) >= 100:  # Need at least 100 observations
+                for i in range(251, len(firm_data)):  # Start from 252nd observation
+                    window_data = firm_data.iloc[i-251:i+1]  # 252-day window
                     
-                    if len(window_data) == 20:  # Ensure full window
+                    if len(window_data) == 252:  # Ensure full window
                         try:
                             # Prepare regression variables
-                            valid_data = window_data.dropna(subset=['ret', 'mktrf', 'dVIX'])
+                            valid_data = window_data.dropna(subset=['ret', 'mktrf'])
                             
-                            if len(valid_data) >= 15:  # Need at least 15 valid observations
+                            if len(valid_data) >= 100:  # Need at least 100 valid observations
                                 X = np.column_stack([
                                     np.ones(len(valid_data)),
-                                    valid_data['mktrf'].values,
-                                    valid_data['dVIX'].values
+                                    valid_data['mktrf'].values
                                 ])
                                 y = valid_data['ret'].values
                                 
-                                # Run regression: ret = α + β1*mktrf + β2*dVIX + ε
+                                # Run CAPM regression: ret = α + β*mktrf + ε
                                 beta = np.linalg.lstsq(X, y, rcond=None)[0]
+                                fitted_values = X @ beta
+                                residuals = y - fitted_values
                                 
-                                # Store the VIX beta (coefficient on dVIX)
-                                data.loc[window_data.index[-1], 'betaVIX'] = beta[2]
+                                # Calculate root mean squared error (RMSE)
+                                rmse = np.sqrt(np.mean(residuals ** 2))
+                                
+                                # Store the idiosyncratic volatility
+                                data.loc[window_data.index[-1], 'IdioVolAHT'] = rmse
                         except:
                             continue
         
@@ -107,26 +105,26 @@ def main():
         # Prepare output data
         logger.info("Preparing output data")
         
-        # For BetaVIX
-        betavix_output = monthly_data[['permno', 'time_avail_m', 'betaVIX']].copy()
-        betavix_output = betavix_output.dropna(subset=['betaVIX'])
-        betavix_output['yyyymm'] = betavix_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
-        betavix_output = betavix_output[['permno', 'yyyymm', 'betaVIX']]
+        # For IdioVolAHT
+        idiovolat_output = monthly_data[['permno', 'time_avail_m', 'IdioVolAHT']].copy()
+        idiovolat_output = idiovolat_output.dropna(subset=['IdioVolAHT'])
+        idiovolat_output['yyyymm'] = idiovolat_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
+        idiovolat_output = idiovolat_output[['permno', 'yyyymm', 'IdioVolAHT']]
         
         # Save results
         logger.info("Saving results")
         
-        # Save BetaVIX
-        betavix_file = output_path / "BetaVIX.csv"
-        betavix_output.to_csv(betavix_file, index=False)
-        logger.info(f"Saved BetaVIX predictor to {betavix_file}")
-        logger.info(f"BetaVIX: {len(betavix_output)} observations")
+        # Save IdioVolAHT
+        idiovolat_file = output_path / "IdioVolAHT.csv"
+        idiovolat_output.to_csv(idiovolat_file, index=False)
+        logger.info(f"Saved IdioVolAHT predictor to {idiovolat_file}")
+        logger.info(f"IdioVolAHT: {len(idiovolat_output)} observations")
         
-        logger.info("Successfully completed BetaVIX predictor calculation")
+        logger.info("Successfully completed IdioVolAHT predictor calculation")
         
     except Exception as e:
-        logger.error(f"Error in BetaVIX calculation: {str(e)}")
+        logger.error(f"Error in IdioVolAHT calculation: {str(e)}")
         raise
 
 if __name__ == "__main__":
-    main()
+    main() 

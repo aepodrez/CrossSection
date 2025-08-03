@@ -79,6 +79,15 @@ except ImportError as e:
     logger.warning(f"PyDataDownloads not available: {e}")
     PYDATADOWNLOADS_AVAILABLE = False
 
+# Import PyPredictors functions
+try:
+    from Signals.Code.PyPredictors import PREDICTOR_FUNCTIONS
+    PYPREDICTORS_AVAILABLE = True
+    logger.info("✅ PyPredictors package imported successfully")
+except ImportError as e:
+    logger.warning(f"PyPredictors not available: {e}")
+    PYPREDICTORS_AVAILABLE = False
+
 # ============================================================
 # Configuration and Settings
 # ============================================================
@@ -95,6 +104,17 @@ def check_fred_access():
         logger.warning("This is optional - you'll miss about 6 predictors")
         return False
 
+def check_predictor_availability():
+    """Check if predictor packages are available"""
+    if not PYPREDICTORS_AVAILABLE:
+        logger.error("❌ PyPredictors package not available!")
+        logger.error("Please run create_pypredictors.py first to generate the predictor functions.")
+        logger.error("This will convert the Stata .do files to Python functions.")
+        return False
+    else:
+        logger.info(f"✅ PyPredictors package available with {len(PREDICTOR_FUNCTIONS)} functions")
+        return True
+
 def create_directories():
     """Create necessary directories"""
     dirs_to_create = [
@@ -107,6 +127,29 @@ def create_directories():
     for dir_path in dirs_to_create:
         dir_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created directory: {dir_path}")
+
+def check_required_data_files():
+    """Check if required data files exist for predictor construction"""
+    required_files = [
+        Path(PROJECT_PATH) / "Signals" / "Code" / "Data" / "crspm.csv",
+        Path(PROJECT_PATH) / "Signals" / "Code" / "Data" / "compustat.csv",
+        Path(PROJECT_PATH) / "Signals" / "Code" / "Data" / "ibes.csv"
+    ]
+    
+    missing_files = []
+    for file_path in required_files:
+        if not file_path.exists():
+            missing_files.append(str(file_path))
+    
+    if missing_files:
+        logger.warning("⚠️  Some required data files are missing:")
+        for file_path in missing_files:
+            logger.warning(f"   - {file_path}")
+        logger.warning("This may cause some predictors to fail. Make sure to run data downloads first.")
+        return False
+    else:
+        logger.info("✅ All required data files found")
+        return True
 
 # ============================================================
 # Data Download Functions
@@ -194,9 +237,82 @@ def download_data():
 # ============================================================
 
 def construct_predictor_signals():
-    """Construct all predictor signals"""
-    logger.info("Constructing predictor signals...")
-    pass
+    """Construct all predictor signals using PyPredictors functions"""
+    logger.info("=== STEP 2: Constructing All Predictor Signals ===")
+    
+    if not PYPREDICTORS_AVAILABLE:
+        logger.error("PyPredictors not available. Please run create_pypredictors.py first.")
+        return False
+    
+    # Track success/failure for each predictor
+    predictor_results = []
+    total_predictors = len(PREDICTOR_FUNCTIONS)
+    
+    logger.info(f"Starting construction of {total_predictors} predictor signals...")
+    
+    for i, func in enumerate(PREDICTOR_FUNCTIONS, 1):
+        logger.info(f"Progress: {i}/{total_predictors} - {func.__name__}")
+        try:
+            logger.info(f"Executing: {func.__name__}")
+            start_time = datetime.now()
+            
+            # Execute the predictor function
+            success = func()
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            # Record results
+            result = {
+                'function': func.__name__,
+                'success': success,
+                'duration_seconds': duration,
+                'timestamp': start_time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            predictor_results.append(result)
+            
+            if success:
+                logger.info(f"✅ {func.__name__} completed successfully in {duration:.1f} seconds")
+            else:
+                logger.error(f"❌ {func.__name__} failed after {duration:.1f} seconds")
+                
+        except Exception as e:
+            logger.error(f"❌ {func.__name__} failed with exception: {e}")
+            predictor_results.append({
+                'function': func.__name__,
+                'success': False,
+                'duration_seconds': 0,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'error': str(e)
+            })
+    
+    # Summary report
+    successful_predictors = [r for r in predictor_results if r['success']]
+    failed_predictors = [r for r in predictor_results if not r['success']]
+    
+    logger.info(f"📊 Predictor Construction Summary:")
+    logger.info(f"   ✅ Successful: {len(successful_predictors)}/{len(predictor_results)}")
+    logger.info(f"   ❌ Failed: {len(failed_predictors)}/{len(predictor_results)}")
+    
+    if failed_predictors:
+        logger.warning("Failed predictors:")
+        for result in failed_predictors:
+            logger.warning(f"   - {result['function']}: {result.get('error', 'Unknown error')}")
+    
+    # Save predictor results to log file
+    results_df = pd.DataFrame(predictor_results)
+    log_path = Path(PROJECT_PATH) / "Signals" / "Logs" / "predictor_results.csv"
+    results_df.to_csv(log_path, index=False)
+    logger.info(f"📝 Predictor results saved to: {log_path}")
+    
+    # Calculate total time
+    total_time = sum(r['duration_seconds'] for r in predictor_results)
+    avg_time = total_time / len(predictor_results) if predictor_results else 0
+    
+    logger.info(f"⏱️  Total time: {total_time/60:.1f} minutes")
+    logger.info(f"⏱️  Average time per predictor: {avg_time:.1f} seconds")
+    
+    return len(failed_predictors) == 0  # Return True if all predictors succeeded
 
 def construct_placebo_signals():
     """Construct all placebo signals"""
@@ -252,13 +368,22 @@ def main():
     # Check FRED access
     check_fred_access()
     
+    # Check predictor availability
+    check_predictor_availability()
+    
     # Download data
     logger.info("=== STEP 1: Downloading Data ===")
     download_data()
     
+    # Check required data files
+    check_required_data_files()
+    
     # Construct predictors
     logger.info("=== STEP 2: Creating Predictors ===")
     construct_predictor_signals()
+
+    logger.info("Done downloading and constructing predictors")
+    exit()
     
     # Construct placebos
     logger.info("=== STEP 3: Creating Placebos ===")
