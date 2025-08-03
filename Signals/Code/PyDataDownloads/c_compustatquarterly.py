@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def c_compustatquarterly():
+def c_compustatquarterly(wrds_conn=None):
     """
     Python equivalent of C_CompustatQuarterly.do
     
@@ -22,8 +22,7 @@ def c_compustatquarterly():
     logger.info("Downloading Compustat quarterly data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False
@@ -61,14 +60,20 @@ def c_compustatquarterly():
         data['time_avail_m'] = pd.to_datetime(data['datadate']) + pd.DateOffset(months=3)
         data['time_avail_m'] = data['time_avail_m'].dt.to_period('M')
         
-        # Patch cases with earlier data availability (if rdq is available and earlier)
-        mask = (data['rdq'].notna() & 
-                (pd.to_datetime(data['rdq']) + pd.DateOffset(months=3) > data['time_avail_m'].dt.to_timestamp()))
+        # Patch cases with earlier data availability (following Stata exactly)
+        # Replace time_avail_m if rdq is available and earlier
+        rdq_available = data['rdq'].notna()
+        rdq_earlier = (pd.to_datetime(data['rdq']) + pd.DateOffset(months=3)) > data['time_avail_m'].dt.to_timestamp()
+        mask = rdq_available & rdq_earlier
         data.loc[mask, 'time_avail_m'] = (pd.to_datetime(data.loc[mask, 'rdq']) + 
                                          pd.DateOffset(months=3)).dt.to_period('M')
         
         # Drop cases with very late release (more than 6 months difference)
-        mask = ((pd.to_datetime(data['rdq']) - pd.to_datetime(data['datadate'])).dt.days > 180) & data['rdq'].notna()
+        # Following Stata: drop if mofd(rdq) - mofd(datadate) > 6 & !mi(rdq)
+        rdq_available = data['rdq'].notna()
+        date_diff = (pd.to_datetime(data['rdq']) - pd.to_datetime(data['datadate'])).dt.days
+        late_release = date_diff > 180
+        mask = rdq_available & late_release
         data = data[~mask]
         logger.info(f"After dropping very late releases: {len(data)} records")
         

@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def n_ibes_unadjustedactuals():
+def n_ibes_unadjustedactuals(wrds_conn=None):
     """
     Python equivalent of N_IBES_UnadjustedActuals.do
     
@@ -22,8 +22,7 @@ def n_ibes_unadjustedactuals():
     logger.info("Downloading IBES unadjusted actuals data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

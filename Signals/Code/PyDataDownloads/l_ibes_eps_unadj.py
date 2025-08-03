@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def l_ibes_eps_unadj():
+def l_ibes_eps_unadj(wrds_conn=None):
     """
     Python equivalent of L_IBES_EPS_Unadj.do
     
@@ -22,8 +22,7 @@ def l_ibes_eps_unadj():
     logger.info("Downloading IBES EPS unadjusted data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

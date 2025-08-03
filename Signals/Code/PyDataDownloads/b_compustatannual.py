@@ -91,13 +91,13 @@ def b_compustatannual(wrds_conn=None):
         mask = (data['dc'].isna() & data['dcvt'].notna())
         data.loc[mask, 'dc'] = data.loc[mask, 'dcvt']
         
-        # Interest expense
-        data['xint0'] = 0
+        # Interest expense (following Stata exactly: gen xint0 = 0, replace xint0 = xint if xint !=.)
+        data['xint0'] = 0.0
         mask = data['xint'].notna()
         data.loc[mask, 'xint0'] = data.loc[mask, 'xint']
         
-        # Selling, general and administrative expenses
-        data['xsga0'] = 0
+        # Selling, general and administrative expenses (following Stata exactly: gen xsga0 = 0, replace xsga0 = xsga if xsga !=.)
+        data['xsga0'] = 0.0
         mask = data['xsga'].notna()
         data.loc[mask, 'xsga0'] = data.loc[mask, 'xsga']
         
@@ -115,16 +115,24 @@ def b_compustatannual(wrds_conn=None):
             if var in data.columns:
                 data[var] = data[var].fillna(0)
         
-        # Add identifiers for merging
+        # Add identifiers for merging (following Stata joinby procedure exactly)
         linking_table_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/CCMLinkingTable.csv")
         if linking_table_path.exists():
             linking_table = pd.read_csv(linking_table_path)
+            
+            # Ensure gvkey is string in both datasets for merging
+            data['gvkey'] = data['gvkey'].astype(str)
+            linking_table['gvkey'] = linking_table['gvkey'].astype(str)
+            
+            # Stata joinby is equivalent to inner merge on gvkey
             data = data.merge(linking_table, on='gvkey', how='inner')
             logger.info(f"After merging with linking table: {len(data)} records")
             
-            # Use only if data date is within the validity period of the link
+            # Use only if data date is within the validity period of the link (exactly as in Stata)
             data['temp'] = ((data['timeLinkStart_d'] <= data['datadate']) & 
                            (data['datadate'] <= data['timeLinkEnd_d']))
+            # Convert to boolean explicitly to avoid ambiguity
+            data['temp'] = data['temp'].astype(bool)
             data = data[data['temp'] == True]
             data = data.drop('temp', axis=1)
             logger.info(f"After filtering by link validity: {len(data)} records")

@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def i2_crspmonthlyraw():
+def i2_crspmonthlyraw(wrds_conn=None):
     """
     Python equivalent of I2_CRSPmonthlyraw.do
     
@@ -22,8 +22,7 @@ def i2_crspmonthlyraw():
     logger.info("Downloading CRSP monthly raw data (without delisting adjustments)...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

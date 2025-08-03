@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def q_marketreturns():
+def q_marketreturns(wrds_conn=None):
     """
     Python equivalent of Q_MarketReturns.do
     
@@ -22,8 +22,7 @@ def q_marketreturns():
     logger.info("Downloading monthly market returns...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

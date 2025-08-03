@@ -35,9 +35,17 @@ from fredapi import Fred
 # SET PROJECT PATH AND CONNECTION SETTINGS HERE !
 # ============================================================
 PROJECT_PATH = "/Users/alexpodrez/Documents/CrossSection/"  # required, should point to project root
-WRDS_CONNECTION = "wrds-stata"  # required, see readme
 RSCRIPT_PATH = "/usr/local/bin/Rscript"  # optional, used for like 3 signals
-FRED_API_KEY = "d9b5ebeddbd909b857b4129528a130b6"  # FRED API key
+
+# Import secrets (API keys and credentials)
+try:
+    from secrets import FRED_API_KEY, WRDS_CONNECTION
+except ImportError:
+    print("ERROR: secrets.py file not found!")
+    print("Please create secrets.py with your API keys:")
+    print("FRED_API_KEY = 'your_fred_api_key'")
+    print("WRDS_CONNECTION = 'your_wrds_connection'")
+    sys.exit(1)
 
 # Validate paths
 if not PROJECT_PATH or not WRDS_CONNECTION:
@@ -152,6 +160,60 @@ def check_required_data_files():
         logger.info("✅ All required data files found")
         return True
 
+def check_download_output_file(func_name):
+    """Check what output file a download function creates"""
+    # Map function names to their expected output files
+    output_file_map = {
+        'a_ccmlinkingtable': Path(PROJECT_PATH) / "Signals" / "Data" / "CCMLinkingTable.csv",
+        'b_compustatannual': Path(PROJECT_PATH) / "Signals" / "Data" / "m_aCompustat.csv",
+        'c_compustatquarterly': Path(PROJECT_PATH) / "Signals" / "Data" / "m_qCompustat.csv",
+        'd_compustatpensions': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatPensions.csv",
+        'e_compustatbusinesssegments': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatBusinessSegments.csv",
+        'f_compustatcustomersegments': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatCustomerSegments.csv",
+        'g_compustatshortinterest': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatShortInterest.csv",
+        'h_crspdistributions': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPDistributions.csv",
+        'i2_crspmonthlyraw': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPMonthlyRaw.csv",
+        'i_crspmonthly': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPMonthly.csv",
+        'j_crspdaily': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPDaily.csv",
+        'k_crspacquisitions': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPAcquisitions.csv",
+        'l2_ibes_eps_adj': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_EPS_Adj.csv",
+        'l_ibes_eps_unadj': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_EPS_Unadj.csv",
+        'm_ibes_recommendations': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_Recommendations.csv",
+        'n_ibes_unadjustedactuals': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_UnadjustedActuals.csv",
+        'o_daily_fama_french': Path(PROJECT_PATH) / "Signals" / "Data" / "Daily_FamaFrench.csv",
+        'p_monthly_fama_french': Path(PROJECT_PATH) / "Signals" / "Data" / "Monthly_FamaFrench.csv",
+        'q_marketreturns': Path(PROJECT_PATH) / "Signals" / "Data" / "MarketReturns.csv",
+        'r_monthlyliquidityfactor': Path(PROJECT_PATH) / "Signals" / "Data" / "MonthlyLiquidityFactor.csv",
+        's_qfactormodel': Path(PROJECT_PATH) / "Signals" / "Data" / "QFactorModel.csv",
+        't_vix': Path(PROJECT_PATH) / "Signals" / "Data" / "d_vix.csv",
+        'u_gnpdeflator': Path(PROJECT_PATH) / "Signals" / "Data" / "GNPdefl.csv",
+        'v_tbill3m': Path(PROJECT_PATH) / "Signals" / "Data" / "TBill3M.csv",
+        'w_brokerdealerleverage': Path(PROJECT_PATH) / "Signals" / "Data" / "brokerLev.csv",
+        'x2_ciqcreditratings': Path(PROJECT_PATH) / "Signals" / "Data" / "CIQCreditRatings.csv",
+        'x_spcreditratings': Path(PROJECT_PATH) / "Signals" / "Data" / "SPCreditRatings.csv",
+        'za_ipodates': Path(PROJECT_PATH) / "Signals" / "Data" / "IPODates.csv",
+        'zb_pin': Path(PROJECT_PATH) / "Signals" / "Data" / "PIN.csv",
+        'zc_governanceindex': Path(PROJECT_PATH) / "Signals" / "Data" / "GovernanceIndex.csv",
+        'zd_corwinschultz': Path(PROJECT_PATH) / "Signals" / "Data" / "CorwinSchultz.csv",
+        'ze_13f': Path(PROJECT_PATH) / "Signals" / "Data" / "13F.csv",
+        'zf_crspibeslink': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPIBESLink.csv",
+        'zg_bidasktaq': Path(PROJECT_PATH) / "Signals" / "Data" / "BidAskTAQ.csv",
+        'zh_optionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "OptionMetrics.csv",
+        'zi_patentcitations': Path(PROJECT_PATH) / "Signals" / "Data" / "PatentCitations.csv",
+        'zj_inputoutputmomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "InputOutputMomentum.csv",
+        'zk_customermomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "CustomerMomentum.csv",
+        'zl_crspoptionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPOptionMetrics.csv"
+    }
+    
+    return output_file_map.get(func_name)
+
+def check_predictor_output_file(func_name):
+    """Check what output file a predictor function creates"""
+    # Most predictor functions save to the main Signals/Data directory
+    # with the function name as the filename
+    output_file = Path(PROJECT_PATH) / "Signals" / "Data" / f"{func_name}.csv"
+    return output_file
+
 # ============================================================
 # Data Download Functions
 # ============================================================
@@ -181,6 +243,19 @@ def download_data():
         try:
             logger.info(f"Executing: {func.__name__}")
             start_time = datetime.now()
+            
+            # Check if output file already exists
+            output_file = check_download_output_file(func.__name__)
+            if output_file and output_file.exists():
+                logger.info(f"⏭️  Skipping {func.__name__} - output file already exists: {output_file}")
+                download_results.append({
+                    'function': func.__name__,
+                    'success': True,
+                    'duration_seconds': 0,
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'skipped': True
+                })
+                continue
             
             # Execute the download function with WRDS connection
             success = func(wrds_conn)
@@ -256,6 +331,19 @@ def construct_predictor_signals():
         try:
             logger.info(f"Executing: {func.__name__}")
             start_time = datetime.now()
+            
+            # Check if predictor output file already exists
+            output_file = check_predictor_output_file(func.__name__)
+            if output_file and output_file.exists():
+                logger.info(f"⏭️  Skipping {func.__name__} - output file already exists: {output_file}")
+                predictor_results.append({
+                    'function': func.__name__,
+                    'success': True,
+                    'duration_seconds': 0,
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'skipped': True
+                })
+                continue
             
             # Execute the predictor function
             success = func()

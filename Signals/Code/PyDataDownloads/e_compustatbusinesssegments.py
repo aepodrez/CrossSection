@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def e_compustatbusinesssegments():
+def e_compustatbusinesssegments(wrds_conn=None):
     """
     Python equivalent of E_CompustatBusinessSegments.do
     
@@ -22,8 +22,7 @@ def e_compustatbusinesssegments():
     logger.info("Downloading Compustat business segments data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

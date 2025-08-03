@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def k_crspacquisitions():
+def k_crspacquisitions(wrds_conn=None):
     """
     Python equivalent of K_CRSPAcquisitions.do
     
@@ -22,8 +22,7 @@ def k_crspacquisitions():
     logger.info("Downloading CRSP acquisitions/spinoffs data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

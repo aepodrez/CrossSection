@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def p_monthly_fama_french():
+def p_monthly_fama_french(wrds_conn=None):
     """
     Python equivalent of P_Monthly_Fama-French.do
     
@@ -22,8 +22,7 @@ def p_monthly_fama_french():
     logger.info("Downloading monthly Fama-French factors...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

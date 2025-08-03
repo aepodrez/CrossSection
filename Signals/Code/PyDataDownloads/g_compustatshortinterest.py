@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def g_compustatshortinterest():
+def g_compustatshortinterest(wrds_conn=None):
     """
     Python equivalent of G_CompustatShortInterest.do
     
@@ -22,8 +22,7 @@ def g_compustatshortinterest():
     logger.info("Downloading Compustat short interest data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

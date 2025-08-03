@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def m_ibes_recommendations():
+def m_ibes_recommendations(wrds_conn=None):
     """
     Python equivalent of M_IBES_Recommendations.do
     
@@ -22,8 +22,7 @@ def m_ibes_recommendations():
     logger.info("Downloading IBES recommendations data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False
