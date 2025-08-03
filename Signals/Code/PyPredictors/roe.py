@@ -17,25 +17,68 @@ def roe():
     """
     Python equivalent of RoE.do
     
-    TODO: Implement the predictor construction logic from the original Stata file
+    Constructs the RoE predictor signal for return on equity.
     """
-    logger.info("Constructing predictor signal: roe...")
+    logger.info("Constructing predictor signal: RoE...")
     
     try:
-        # TODO: Implement the actual predictor construction logic here
-        # This should replicate the functionality of RoE.do
+        # DATA LOAD
+        # Load annual Compustat data
+        compustat_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/m_aCompustat.csv")
         
-        # Example structure:
-        # 1. Load required data files
-        # 2. Apply predictor-specific calculations
-        # 3. Create the predictor signal
-        # 4. Save the predictor signal
+        logger.info(f"Loading annual Compustat data from: {compustat_path}")
         
-        logger.info(f"Successfully constructed predictor: roe")
+        if not compustat_path.exists():
+            logger.error(f"m_aCompustat not found: {compustat_path}")
+            logger.error("Please run the annual Compustat data creation script first")
+            return False
+        
+        # Load required variables
+        required_vars = ['gvkey', 'permno', 'time_avail_m', 'ni', 'ceq']
+        
+        data = pd.read_csv(compustat_path, usecols=required_vars)
+        logger.info(f"Successfully loaded {len(data)} records")
+        
+        # Remove duplicates (equivalent to Stata's "bysort permno time_avail_m: keep if _n == 1")
+        data = data.drop_duplicates(subset=['permno', 'time_avail_m'], keep='first')
+        logger.info(f"After removing duplicates: {len(data)} records")
+        
+        # SIGNAL CONSTRUCTION
+        logger.info("Calculating RoE signal...")
+        
+        # Calculate RoE (equivalent to Stata's "gen RoE = ni/ceq")
+        data['RoE'] = data['ni'] / data['ceq']
+        
+        logger.info("Successfully calculated RoE signal")
+        
+        # SAVE RESULTS
+        logger.info("Saving RoE predictor signal...")
+        
+        # Create output directories if they don't exist
+        predictors_dir = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Predictors")
+        predictors_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Prepare final dataset for saving
+        output_data = data[['permno', 'time_avail_m', 'RoE']].copy()
+        
+        # Remove missing values
+        output_data = output_data.dropna(subset=['RoE'])
+        logger.info(f"Final dataset: {len(output_data)} observations")
+        
+        # Create yyyymm column for CSV output
+        output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
+        
+        # Save CSV file
+        csv_output_path = predictors_dir / "RoE.csv"
+        csv_data = output_data[['permno', 'yyyymm', 'RoE']].copy()
+        csv_data.to_csv(csv_output_path, index=False)
+        logger.info(f"Saved RoE predictor to: {csv_output_path}")
+        
+        logger.info("Successfully constructed RoE predictor signal")
         return True
         
     except Exception as e:
-        logger.error(f"Failed to construct predictor roe: {e}")
+        logger.error(f"Failed to construct RoE predictor: {e}")
         return False
 
 if __name__ == "__main__":

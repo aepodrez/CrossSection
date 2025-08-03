@@ -13,24 +13,24 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def oscore():
+def oscore_d():
     """
     Python equivalent of OScore.do
     
-    Constructs the OScore predictor signal for Ohlson O-Score.
+    Constructs the OScore predictor signal for Ohlson O-Score (annual).
     """
     logger.info("Constructing predictor signal: OScore...")
     
     try:
         # DATA LOAD
-        # Load Compustat data
+        # Load annual Compustat data
         compustat_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/m_aCompustat.csv")
         
-        logger.info(f"Loading Compustat data from: {compustat_path}")
+        logger.info(f"Loading annual Compustat data from: {compustat_path}")
         
         if not compustat_path.exists():
             logger.error(f"m_aCompustat not found: {compustat_path}")
-            logger.error("Please run the Compustat data creation script first")
+            logger.error("Please run the annual Compustat data creation script first")
             return False
         
         # Load required variables
@@ -40,10 +40,10 @@ def oscore():
         logger.info(f"Successfully loaded {len(data)} records")
         
         # Remove duplicates (equivalent to Stata's "bysort permno time_avail_m: keep if _n == 1")
-        data = data.drop_duplicates(subset=['permno', 'time_avail_m'])
+        data = data.drop_duplicates(subset=['permno', 'time_avail_m'], keep='first')
         logger.info(f"After removing duplicates: {len(data)} records")
         
-        # Load SignalMasterTable for price
+        # Load SignalMasterTable for price data
         master_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/SignalMasterTable.csv")
         
         logger.info(f"Loading SignalMasterTable from: {master_path}")
@@ -158,4 +158,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     # Run the predictor construction function
-    oscore()
+    oscore_d() 
