@@ -84,8 +84,9 @@ try:
     from Signals.Code.PyPredictors import PREDICTOR_FUNCTIONS
     PYPREDICTORS_AVAILABLE = True
     logger.info("✅ PyPredictors package imported successfully")
-except ImportError as e:
+except (ImportError, FileNotFoundError) as e:
     logger.warning(f"PyPredictors not available: {e}")
+    logger.warning("This is expected if data files don't exist yet. Will be available after data download.")
     PYPREDICTORS_AVAILABLE = False
 
 # ============================================================
@@ -107,9 +108,9 @@ def check_fred_access():
 def check_predictor_availability():
     """Check if predictor packages are available"""
     if not PYPREDICTORS_AVAILABLE:
-        logger.error("❌ PyPredictors package not available!")
-        logger.error("Please run create_pypredictors.py first to generate the predictor functions.")
-        logger.error("This will convert the Stata .do files to Python functions.")
+        logger.warning("⚠️  PyPredictors package not available!")
+        logger.warning("This is expected if data files don't exist yet.")
+        logger.warning("Predictors will be available after data download is complete.")
         return False
     else:
         logger.info(f"✅ PyPredictors package available with {len(PREDICTOR_FUNCTIONS)} functions")
@@ -181,8 +182,8 @@ def download_data():
             logger.info(f"Executing: {func.__name__}")
             start_time = datetime.now()
             
-            # Execute the download function
-            success = func()
+            # Execute the download function with WRDS connection
+            success = func(wrds_conn)
             
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
@@ -368,7 +369,7 @@ def main():
     # Check FRED access
     check_fred_access()
     
-    # Check predictor availability
+    # Check predictor availability (may not be available initially)
     check_predictor_availability()
     
     # Download data
@@ -377,6 +378,20 @@ def main():
     
     # Check required data files
     check_required_data_files()
+    
+    # Re-check predictor availability after data download
+    if not PYPREDICTORS_AVAILABLE:
+        logger.info("Re-checking PyPredictors availability after data download...")
+        try:
+            from Signals.Code.PyPredictors import PREDICTOR_FUNCTIONS
+            # Update global variables
+            globals()['PYPREDICTORS_AVAILABLE'] = True
+            globals()['PREDICTOR_FUNCTIONS'] = PREDICTOR_FUNCTIONS
+            logger.info(f"✅ PyPredictors package now available with {len(PREDICTOR_FUNCTIONS)} functions")
+        except (ImportError, FileNotFoundError) as e:
+            logger.error(f"❌ PyPredictors still not available after data download: {e}")
+            logger.error("Please check that all required data files were downloaded successfully.")
+            return
     
     # Construct predictors
     logger.info("=== STEP 2: Creating Predictors ===")

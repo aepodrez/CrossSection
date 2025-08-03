@@ -21,7 +21,7 @@ from scipy import stats
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+def zz1_intanbm_intansp_intancfp_intanep():
     """Main function to calculate IntanBM, IntanSP, IntanCFP, and IntanEP predictors."""
     
     # Define file paths

@@ -20,7 +20,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+def zz1_rio_mb_rio_disp_rio_turnover_rio_volatility():
     """Main function to calculate RIO_MB, RIO_Disp, RIO_Turnover, and RIO_Volatility predictors."""
     
     # Define file paths

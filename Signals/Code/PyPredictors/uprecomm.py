@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def upreccomm():
+def uprecomm():
     """
     Python equivalent of UpRecomm.do
     

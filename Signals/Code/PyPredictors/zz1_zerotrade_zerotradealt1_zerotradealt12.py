@@ -19,7 +19,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+def zz1_zerotrade_zerotradealt1_zerotradealt12():
     """Main function to calculate zerotrade1M, zerotrade6M, and zerotrade12M predictors."""
     
     # Define file paths

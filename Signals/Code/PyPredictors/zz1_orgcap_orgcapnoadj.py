@@ -80,108 +80,126 @@ OUT_S = BASE / "Predictors"
 OUT_P.mkdir(parents=True, exist_ok=True)
 OUT_S.mkdir(parents=True, exist_ok=True)
 
-# ------------------------------------------------------------------  load data
-log.info("Loading SignalMasterTable …")
-master = pd.read_csv(
-    INT / "SignalMasterTable.csv",
-    usecols=[
-        "permno",
-        "time_avail_m",
-        "sicCRSP",
-        "shrcd",
-        "exchcd",
-    ],
-)
+def zz1_orgcap_orgcapnoadj():
+    """
+    Python equivalent of ZZ1_OrgCap_OrgCapNoAdj.do
+    
+    Constructs the OrgCap and OrgCapNoAdj predictor signals.
+    """
+    log.info("Constructing predictor signals: OrgCap and OrgCapNoAdj...")
+    
+    try:
+        # ------------------------------------------------------------------  load data
+        log.info("Loading SignalMasterTable …")
+        master = pd.read_csv(
+            INT / "SignalMasterTable.csv",
+            usecols=[
+                "permno",
+                "time_avail_m",
+                "sicCRSP",
+                "shrcd",
+                "exchcd",
+            ],
+        )
 
-log.info("Loading Compustat monthly file …")
-comp = pd.read_csv(
-    INT / "m_aCompustat.csv",
-    usecols=["permno", "time_avail_m", "xsga", "at", "datadate", "sic"],
-)
+        log.info("Loading Compustat monthly file …")
+        comp = pd.read_csv(
+            INT / "m_aCompustat.csv",
+            usecols=["permno", "time_avail_m", "xsga", "at", "datadate", "sic"],
+        )
 
-log.info("Loading GNP deflator …")
-gnpdefl = pd.read_csv(
-    INT / "GNPdefl.csv",  # columns: time_avail_m, gnpdefl
-)
+        log.info("Loading GNP deflator …")
+        gnpdefl = pd.read_csv(
+            INT / "GNPdefl.csv",  # columns: time_avail_m, gnpdefl
+        )
 
-# -----------------------------------------------------------  merge & filters
-df = (
-    master.merge(comp, on=["permno", "time_avail_m"], how="inner")
-    .merge(gnpdefl, on="time_avail_m", how="left")
-)
+        # -----------------------------------------------------------  merge & filters
+        df = (
+            master.merge(comp, on=["permno", "time_avail_m"], how="inner")
+            .merge(gnpdefl, on="time_avail_m", how="left")
+        )
 
-# SIC numeric
-df["sic"] = pd.to_numeric(df["sic"], errors="coerce")
+        # SIC numeric
+        df["sic"] = pd.to_numeric(df["sic"], errors="coerce")
 
-# Keep December FYE & non-financial SICs
-log.info("Applying December-FYE + SIC filters …")
-df["datadate"] = pd.to_datetime(df["datadate"])
-good = (
-    (df["datadate"].dt.month == 12)
-    & ((df["sic"] < 6000) | (df["sic"] >= 7000))
-    & (~df["sic"].isna())
-)
-df = df.loc[good].copy()
+        # Keep December FYE & non-financial SICs
+        log.info("Applying December-FYE + SIC filters …")
+        df["datadate"] = pd.to_datetime(df["datadate"])
+        good = (
+            (df["datadate"].dt.month == 12)
+            & ((df["sic"] < 6000) | (df["sic"] >= 7000))
+            & (~df["sic"].isna())
+        )
+        df = df.loc[good].copy()
 
-# -----------------------------------------------------  organisational capital
-df = df.sort_values(["permno", "time_avail_m"])
-df["xsga"] = df["xsga"].fillna(0) / df["gnpdefl"]  # deflate
+        # -----------------------------------------------------  organisational capital
+        df = df.sort_values(["permno", "time_avail_m"])
+        df["xsga"] = df["xsga"].fillna(0) / df["gnpdefl"]  # deflate
 
-# build age index (1,2,3,… by permno)
-df["age"] = df.groupby("permno").cumcount() + 1
+        # build age index (1,2,3,… by permno)
+        df["age"] = df.groupby("permno").cumcount() + 1
 
-# recursive stock
-log.info("Building OrgCapNoAdj stock …")
-df["OrgCapNoAdj"] = np.nan
+        # recursive stock
+        log.info("Building OrgCapNoAdj stock …")
+        df["OrgCapNoAdj"] = np.nan
 
-def compute_stock(sub):
-    sub = sub.sort_values("time_avail_m").copy()
-    xsga = sub["xsga"].values
-    stock = np.empty_like(xsga)
-    for i in range(len(xsga)):
-        if i < 12:
-            stock[i] = 4 * xsga[i]
-        else:
-            stock[i] = 0.85 * stock[i - 12] + xsga[i]
-    sub["OrgCapNoAdj"] = stock / sub["at"].values
-    return sub
+        def compute_stock(sub):
+            sub = sub.sort_values("time_avail_m").copy()
+            xsga = sub["xsga"].values
+            stock = np.empty_like(xsga)
+            for i in range(len(xsga)):
+                if i < 12:
+                    stock[i] = 4 * xsga[i]
+                else:
+                    stock[i] = 0.85 * stock[i - 12] + xsga[i]
+            sub["OrgCapNoAdj"] = stock / sub["at"].values
+            return sub
 
-df = df.groupby("permno", group_keys=False).apply(compute_stock)
-df["OrgCapNoAdj"].replace(0, np.nan, inplace=True)
+        df = df.groupby("permno", group_keys=False).apply(compute_stock)
+        df["OrgCapNoAdj"].replace(0, np.nan, inplace=True)
 
-# --------------------------------------------  winsorise by month (1-99 pct)
-log.info("Winsorising by month …")
-def winsorise(x):
-    low, high = np.nanpercentile(x, [1, 99])
-    return np.clip(x, low, high)
+        # --------------------------------------------  winsorise by month (1-99 pct)
+        log.info("Winsorising by month …")
+        def winsorise(x):
+            low, high = np.nanpercentile(x, [1, 99])
+            return np.clip(x, low, high)
 
-df["OrgCapNoAdjtemp"] = (
-    df.groupby("time_avail_m")["OrgCapNoAdj"].transform(winsorise)
-)
+        df["OrgCapNoAdjtemp"] = (
+            df.groupby("time_avail_m")["OrgCapNoAdj"].transform(winsorise)
+        )
 
-# ----------------------------------------------------------  FF-17 industry
-log.info("Assigning FF-17 industries …")
-df["tempFF17"] = df["sicCRSP"].apply(sic_to_ff17)
-df = df[df["tempFF17"].notna()].copy()
+        # ----------------------------------------------------------  FF-17 industry
+        log.info("Assigning FF-17 industries …")
+        df["tempFF17"] = df["sicCRSP"].apply(sic_to_ff17)
+        df = df[df["tempFF17"].notna()].copy()
 
-# -------------------------  z-score within (month × industry) to get OrgCap
-log.info("Computing industry-adjusted z-scores …")
-g = df.groupby(["tempFF17", "time_avail_m"])["OrgCapNoAdjtemp"]
-df["OrgCap"] = (df["OrgCapNoAdjtemp"] - g.transform("mean")) / g.transform("std")
+        # -------------------------  z-score within (month × industry) to get OrgCap
+        log.info("Computing industry-adjusted z-scores …")
+        g = df.groupby(["tempFF17", "time_avail_m"])["OrgCapNoAdjtemp"]
+        df["OrgCap"] = (df["OrgCapNoAdjtemp"] - g.transform("mean")) / g.transform("std")
 
-# --------------------------------------------------------  prepare & save out
-def _prepare(sub_df, colname):
-    out = sub_df[["permno", "time_avail_m", colname]].dropna().copy()
-    out["yyyymm"] = (
-        pd.to_datetime(out["time_avail_m"]).dt.year * 100
-        + pd.to_datetime(out["time_avail_m"]).dt.month
-    )
-    return out[["permno", "yyyymm", colname]]
+        # --------------------------------------------------------  prepare & save out
+        def _prepare(sub_df, colname):
+            out = sub_df[["permno", "time_avail_m", colname]].dropna().copy()
+            out["yyyymm"] = (
+                pd.to_datetime(out["time_avail_m"]).dt.year * 100
+                + pd.to_datetime(out["time_avail_m"]).dt.month
+            )
+            return out[["permno", "yyyymm", colname]]
 
-log.info("Saving OrgCapNoAdj (placebo) …")
-_prepare(df, "OrgCapNoAdj").to_csv(OUT_P / "OrgCapNoAdj.csv", index=False)
+        log.info("Saving OrgCapNoAdj (placebo) …")
+        _prepare(df, "OrgCapNoAdj").to_csv(OUT_P / "OrgCapNoAdj.csv", index=False)
 
-log.info("Saving OrgCap (predictor) …")
-_prepare(df, "OrgCap").to_csv(OUT_S / "OrgCap.csv", index=False)
+        log.info("Saving OrgCap (predictor) …")
+        _prepare(df, "OrgCap").to_csv(OUT_S / "OrgCap.csv", index=False)
 
-log.info("OrgCap pipeline complete — files written")
+        log.info("OrgCap pipeline complete — files written")
+        return True
+        
+    except Exception as e:
+        log.error(f"Failed to construct OrgCap and OrgCapNoAdj predictors: {e}")
+        return False
+
+if __name__ == "__main__":
+    # Run the predictor construction function
+    zz1_orgcap_orgcapnoadj()

@@ -19,7 +19,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+def zz1_grcapx_grcapx1y_grcapx3y():
     """Main function to calculate grcapx, grcapx1y, and grcapx3y predictors."""
     
     # Define file paths

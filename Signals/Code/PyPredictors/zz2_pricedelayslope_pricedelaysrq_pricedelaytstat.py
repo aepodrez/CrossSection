@@ -19,7 +19,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+def zz2_pricedelayslope_pricedelaysrq_pricedelaytstat():
     """Main function to calculate PriceDelaySlope, PriceDelaySRQ, and PriceDelayTstat predictors."""
     
     # Define file paths

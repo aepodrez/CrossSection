@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def b_compustatannual():
+def b_compustatannual(wrds_conn=None):
     """
     Python equivalent of B_CompustatAnnual.do
     
@@ -22,8 +22,7 @@ def b_compustatannual():
     logger.info("Downloading Compustat annual data...")
     
     try:
-        # Use global WRDS connection from master.py
-        from master import wrds_conn
+        # Check if WRDS connection is provided
         if wrds_conn is None:
             logger.error("WRDS connection not available. Please run master.py")
             return False

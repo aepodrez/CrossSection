@@ -59,20 +59,44 @@ def accruals():
         
         # Calculate 12-month lags for all required variables
         lag_vars = ['act', 'che', 'lct', 'dlc', 'tempTXP', 'at']
-        
+
+        # assume time_avail_m is already datetime64[ns]
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+
+        # o3 revision
         for var in lag_vars:
-            data[f'{var}_lag12'] = data.groupby('permno')[var].shift(12)
+            data[f'{var}_lag12'] = (
+                data.sort_values(['permno','time_avail_m'])
+                    .groupby('permno')
+                    .apply(lambda g: g.set_index('time_avail_m')[var]
+                                    .reindex(g['time_avail_m'] - pd.DateOffset(months=12))
+                    )
+                    .reset_index(level=0, drop=True)
+            )
+        
+        # for var in lag_vars:
+        #     data[f'{var}_lag12'] = data.groupby('permno')[var].shift(12)
         
         # Construct Accruals signal according to Sloan (1996) equation 1, page 6
         # Accruals = ((act - act_lag12) - (che - che_lag12) - 
         #            ((lct - lct_lag12) - (dlc - dlc_lag12) - (tempTXP - tempTXP_lag12)) - dp) / 
         #            ((at + at_lag12)/2)
         
-        data['Accruals'] = (
-            ((data['act'] - data['act_lag12']) - (data['che'] - data['che_lag12']) - 
-             ((data['lct'] - data['lct_lag12']) - (data['dlc'] - data['dlc_lag12']) - 
-              (data['tempTXP'] - data['tempTXP_lag12'])) - data['dp'])) / 
-            ((data['at'] + data['at_lag12'])/2)
+        # Calculate numerator components
+        change_act = data['act'] - data['act_lag12']
+        change_che = data['che'] - data['che_lag12']
+        change_lct = data['lct'] - data['lct_lag12']
+        change_dlc = data['dlc'] - data['dlc_lag12']
+        change_tempTXP = data['tempTXP'] - data['tempTXP_lag12']
+        
+        # Calculate numerator: (change_act - change_che - (change_lct - change_dlc - change_tempTXP) - dp)
+        numerator = (change_act - change_che - (change_lct - change_dlc - change_tempTXP) - data['dp'])
+        
+        # Calculate denominator: (at + at_lag12) / 2
+        denominator = (data['at'] + data['at_lag12']) / 2
+        
+        # Calculate Accruals
+        data['Accruals'] = numerator / denominator
         
         logger.info("Successfully calculated Accruals signal")
         

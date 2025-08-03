@@ -17,7 +17,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+def zz2_betafp():
     """Main function to calculate BetaFP predictor."""
     
     # Define file paths
