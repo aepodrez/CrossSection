@@ -175,7 +175,7 @@ def x2_ciqcreditratings(wrds_conn=None):
         expected_months = pd.date_range(
             start=final_data['time_avail_m'].min().to_timestamp(),
             end=final_data['time_avail_m'].max().to_timestamp(),
-            freq='M'
+            freq='ME'
         )
         actual_months = final_data['time_avail_m'].dt.to_timestamp().sort_values()
         missing_months = set(expected_months) - set(actual_months)

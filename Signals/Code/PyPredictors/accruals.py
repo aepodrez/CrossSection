@@ -57,25 +57,11 @@ def accruals():
         # Create temporary TXP variable (equivalent to Stata's "gen tempTXP = txp; replace tempTXP = 0 if mi(txp)")
         data['tempTXP'] = data['txp'].fillna(0)
         
-        # Calculate 12-month lags for all required variables
+        # Calculate 12-month lags for all required variables (equivalent to Stata's l12. prefix)
         lag_vars = ['act', 'che', 'lct', 'dlc', 'tempTXP', 'at']
-
-        # assume time_avail_m is already datetime64[ns]
-        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
-
-        # o3 revision
-        for var in lag_vars:
-            data[f'{var}_lag12'] = (
-                data.sort_values(['permno','time_avail_m'])
-                    .groupby('permno')
-                    .apply(lambda g: g.set_index('time_avail_m')[var]
-                                    .reindex(g['time_avail_m'] - pd.DateOffset(months=12))
-                    )
-                    .reset_index(level=0, drop=True)
-            )
         
-        # for var in lag_vars:
-        #     data[f'{var}_lag12'] = data.groupby('permno')[var].shift(12)
+        for var in lag_vars:
+            data[f'{var}_lag12'] = data.groupby('permno')[var].shift(12)
         
         # Construct Accruals signal according to Sloan (1996) equation 1, page 6
         # Accruals = ((act - act_lag12) - (che - che_lag12) - 

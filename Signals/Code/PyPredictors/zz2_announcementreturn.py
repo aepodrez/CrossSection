@@ -142,7 +142,7 @@ def zz2_announcementreturn():
         all_months = pd.date_range(
             announcement_data['time_avail_m'].min(),
             announcement_data['time_avail_m'].max(),
-            freq='M'
+            freq='ME'
         )
         
         permno_list = announcement_data['permno'].unique()

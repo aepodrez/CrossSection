@@ -45,6 +45,7 @@ from .zi_patentcitations import zi_patentcitations
 from .zj_inputoutputmomentum import zj_inputoutputmomentum
 from .zk_customermomentum import zk_customermomentum
 from .zl_crspoptionmetrics import zl_crspoptionmetrics
+from .signalmastertable import signalmastertable
 
 
 # List of all available download functions
@@ -88,4 +89,5 @@ DOWNLOAD_FUNCTIONS = [
     zj_inputoutputmomentum,
     zk_customermomentum,
     zl_crspoptionmetrics,
+    signalmastertable,
 ]

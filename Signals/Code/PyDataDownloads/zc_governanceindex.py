@@ -101,7 +101,7 @@ def zc_governanceindex():
             
             # Extend one year beyond end of data (equivalent to Stata's expand logic)
             last_row = ticker_data.iloc[-1].copy()
-            last_row['time_avail_m'] = pd.Period(year=2007, month=1, freq='M')
+            last_row['time_avail_m'] = pd.Period(year=2007, month=1, freq='ME')
             ticker_data = pd.concat([ticker_data, pd.DataFrame([last_row])], ignore_index=True)
             
             # Create complete time series for this ticker
@@ -112,9 +112,9 @@ def zc_governanceindex():
             complete_dates = pd.date_range(
                 start=min_date.to_timestamp(),
                 end=max_date.to_timestamp(),
-                freq='M'
+                freq='ME'
             )
-            complete_dates = [pd.Period(date, freq='M') for date in complete_dates]
+            complete_dates = [pd.Period(date, freq='ME') for date in complete_dates]
             
             # Create complete time series dataframe
             complete_series = pd.DataFrame({
@@ -223,11 +223,11 @@ def zc_governanceindex():
         
         # Check for any gaps in monthly data
         if 'time_avail_m' in data.columns:
-            expected_months = pd.date_range(
-                start=data['time_avail_m'].min().to_timestamp(),
-                end=data['time_avail_m'].max().to_timestamp(),
-                freq='M'
-            )
+                    expected_months = pd.date_range(
+            start=data['time_avail_m'].min().to_timestamp(),
+            end=data['time_avail_m'].max().to_timestamp(),
+            freq='ME'
+        )
             actual_months = data['time_avail_m'].dt.to_timestamp().sort_values()
             missing_months = set(expected_months) - set(actual_months)
             

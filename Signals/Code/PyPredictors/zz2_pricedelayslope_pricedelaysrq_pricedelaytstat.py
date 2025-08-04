@@ -191,7 +191,7 @@ def zz2_pricedelayslope_pricedelaysrq_pricedelaytstat():
         all_months = pd.date_range(
             results_df['time_avail_m'].min(),
             results_df['time_avail_m'].max(),
-            freq='M'
+            freq='ME'
         )
         
         permno_list = results_df['permno'].unique()

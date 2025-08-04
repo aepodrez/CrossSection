@@ -35,7 +35,6 @@ from fredapi import Fred
 # SET PROJECT PATH AND CONNECTION SETTINGS HERE !
 # ============================================================
 PROJECT_PATH = "/Users/alexpodrez/Documents/CrossSection/"  # required, should point to project root
-RSCRIPT_PATH = "/usr/local/bin/Rscript"  # optional, used for like 3 signals
 
 # Import conn_secrets (API keys and credentials)
 try:
@@ -137,28 +136,7 @@ def create_directories():
         dir_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created directory: {dir_path}")
 
-def check_required_data_files():
-    """Check if required data files exist for predictor construction"""
-    required_files = [
-        Path(PROJECT_PATH) / "Signals" / "Code" / "Data" / "crspm.csv",
-        Path(PROJECT_PATH) / "Signals" / "Code" / "Data" / "compustat.csv",
-        Path(PROJECT_PATH) / "Signals" / "Code" / "Data" / "ibes.csv"
-    ]
-    
-    missing_files = []
-    for file_path in required_files:
-        if not file_path.exists():
-            missing_files.append(str(file_path))
-    
-    if missing_files:
-        logger.warning("⚠️  Some required data files are missing:")
-        for file_path in missing_files:
-            logger.warning(f"   - {file_path}")
-        logger.warning("This may cause some predictors to fail. Make sure to run data downloads first.")
-        return False
-    else:
-        logger.info("✅ All required data files found")
-        return True
+
 
 def check_download_output_file(func_name):
     """Check what output file a download function creates"""
@@ -202,7 +180,8 @@ def check_download_output_file(func_name):
         'zi_patentcitations': Path(PROJECT_PATH) / "Signals" / "Data" / "PatentCitations.csv",
         'zj_inputoutputmomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "InputOutputMomentum.csv",
         'zk_customermomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "CustomerMomentum.csv",
-        'zl_crspoptionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPOptionMetrics.csv"
+        'zl_crspoptionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPOptionMetrics.csv",
+        'signalmastertable': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "SignalMasterTable.csv"
     }
     
     return output_file_map.get(func_name)
@@ -257,8 +236,13 @@ def download_data():
                 })
                 continue
             
-            # Execute the download function with WRDS connection
-            success = func(wrds_conn)
+            # Execute the download function with WRDS connection (if it accepts it)
+            import inspect
+            sig = inspect.signature(func)
+            if 'wrds_conn' in sig.parameters:
+                success = func(wrds_conn)
+            else:
+                success = func()
             
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
@@ -403,15 +387,7 @@ def construct_predictor_signals():
     
     return len(failed_predictors) == 0  # Return True if all predictors succeeded
 
-def construct_placebo_signals():
-    """Construct all placebo signals"""
-    logger.info("Constructing placebo signals...")
-    pass
 
-    """Construct quarterly Cash Flow signal"""
-    logger.info("Constructing quarterly Cash Flow signal...")
-    # Placeholder for CF quarterly signal construction
-    pass
 
 # ============================================================
 # Utility Functions
@@ -428,20 +404,7 @@ def save_signal(signal_data, signal_name, signal_type="predictor"):
     signal_data.to_csv(filepath, index=False)
     logger.info(f"Saved {signal_type} signal: {filepath}")
 
-def run_r_script(script_path):
-    """Run R script if R is available"""
-    if os.path.exists(RSCRIPT_PATH):
-        try:
-            result = subprocess.run([RSCRIPT_PATH, script_path], 
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                logger.info(f"Successfully ran R script: {script_path}")
-            else:
-                logger.error(f"R script failed: {result.stderr}")
-        except Exception as e:
-            logger.error(f"Error running R script {script_path}: {e}")
-    else:
-        logger.warning(f"R not available, skipping script: {script_path}")
+
 
 # ============================================================
 # Main Execution
@@ -464,9 +427,6 @@ def main():
     logger.info("=== STEP 1: Downloading Data ===")
     download_data()
     
-    # Check required data files
-    check_required_data_files()
-    
     # Re-check predictor availability after data download
     if not PYPREDICTORS_AVAILABLE:
         logger.info("Re-checking PyPredictors availability after data download...")
@@ -485,13 +445,6 @@ def main():
     logger.info("=== STEP 2: Creating Predictors ===")
     construct_predictor_signals()
 
-    logger.info("Done downloading and constructing predictors")
-    exit()
-    
-    # Construct placebos
-    logger.info("=== STEP 3: Creating Placebos ===")
-    construct_placebo_signals()
-    
     logger.info("CrossSection signal construction complete!")
 
 if __name__ == "__main__":

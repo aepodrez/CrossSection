@@ -105,7 +105,7 @@ def zb_pin():
             for month in range(1, 13):
                 monthly_row = row.copy()
                 monthly_row['month'] = month
-                monthly_row['modate'] = pd.Period(year=year, month=month, freq='M')
+                monthly_row['modate'] = pd.Period(year=year, month=month, freq='ME')
                 monthly_row['time_avail_m'] = monthly_row['modate'] + 11  # Add 11 months lag
                 monthly_data.append(monthly_row)
         
@@ -208,11 +208,11 @@ def zb_pin():
         
         # Check for any gaps in monthly data
         if 'time_avail_m' in data.columns:
-            expected_months = pd.date_range(
-                start=data['time_avail_m'].min().to_timestamp(),
-                end=data['time_avail_m'].max().to_timestamp(),
-                freq='M'
-            )
+                    expected_months = pd.date_range(
+            start=data['time_avail_m'].min().to_timestamp(),
+            end=data['time_avail_m'].max().to_timestamp(),
+            freq='ME'
+        )
             actual_months = data['time_avail_m'].dt.to_timestamp().sort_values()
             missing_months = set(expected_months) - set(actual_months)
             

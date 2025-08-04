@@ -92,9 +92,9 @@ def ze_13f():
             complete_dates = pd.date_range(
                 start=min_date.to_timestamp(),
                 end=max_date.to_timestamp(),
-                freq='M'
+                freq='ME'
             )
-            complete_dates = [pd.Period(date, freq='M') for date in complete_dates]
+            complete_dates = [pd.Period(date, freq='ME') for date in complete_dates]
             
             # Create complete time series dataframe
             complete_series = pd.DataFrame({

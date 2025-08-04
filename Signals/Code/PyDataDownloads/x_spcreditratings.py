@@ -160,7 +160,7 @@ def x_spcreditratings(wrds_conn=None):
         expected_months = pd.date_range(
             start=data['time_avail_m'].min().to_timestamp(),
             end=data['time_avail_m'].max().to_timestamp(),
-            freq='M'
+            freq='ME'
         )
         actual_months = data['time_avail_m'].dt.to_timestamp().sort_values()
         missing_months = set(expected_months) - set(actual_months)
