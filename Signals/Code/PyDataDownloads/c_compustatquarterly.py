@@ -64,6 +64,7 @@ def c_compustatquarterly(wrds_conn=None):
         rdq_available = data['rdq'].notna()
         rdq_time_avail = pd.to_datetime(data['rdq']) + pd.DateOffset(months=3)
         rdq_time_avail = rdq_time_avail.dt.to_period('M')
+        # Only compare when rdq is not missing (equivalent to Stata's !mi(rdq))
         rdq_earlier = rdq_time_avail > data['time_avail_m']
         mask = rdq_available & rdq_earlier
         data.loc[mask, 'time_avail_m'] = rdq_time_avail[mask]
@@ -73,6 +74,7 @@ def c_compustatquarterly(wrds_conn=None):
         if rdq_available.any():
             date_diff = (pd.to_datetime(data['rdq']) - pd.to_datetime(data['datadate'])).dt.days
             late_release = date_diff > 180  # 6 months = 180 days
+            # Only apply when rdq is not missing (equivalent to Stata's !mi(rdq))
             mask = rdq_available & late_release
             data = data[~mask]
         logger.info(f"After dropping very late releases: {len(data)} records")
