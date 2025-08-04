@@ -208,11 +208,11 @@ def zb_pin():
         
         # Check for any gaps in monthly data
         if 'time_avail_m' in data.columns:
-                    expected_months = pd.date_range(
-            start=data['time_avail_m'].min().to_timestamp(),
-            end=data['time_avail_m'].max().to_timestamp(),
-            freq='ME'
-        )
+            expected_months = pd.date_range(
+                start=data['time_avail_m'].min().to_timestamp(),
+                end=data['time_avail_m'].max().to_timestamp(),
+                freq='ME'
+            )
             actual_months = data['time_avail_m'].dt.to_timestamp().sort_values()
             missing_months = set(expected_months) - set(actual_months)
             
