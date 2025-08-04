@@ -158,24 +158,40 @@ def zz1_rio_mb_rio_disp_rio_turnover_rio_volatility():
         # For RIO_MB
         rio_mb_output = data[['permno', 'time_avail_m', 'RIO_MB']].copy()
         rio_mb_output = rio_mb_output.dropna(subset=['RIO_MB'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(rio_mb_output['time_avail_m']):
+            rio_mb_output['time_avail_m'] = pd.to_datetime(rio_mb_output['time_avail_m'])
+        
         rio_mb_output['yyyymm'] = rio_mb_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         rio_mb_output = rio_mb_output[['permno', 'yyyymm', 'RIO_MB']]
         
         # For RIO_Disp
         rio_disp_output = data[['permno', 'time_avail_m', 'RIO_Disp']].copy()
         rio_disp_output = rio_disp_output.dropna(subset=['RIO_Disp'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(rio_disp_output['time_avail_m']):
+            rio_disp_output['time_avail_m'] = pd.to_datetime(rio_disp_output['time_avail_m'])
+        
         rio_disp_output['yyyymm'] = rio_disp_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         rio_disp_output = rio_disp_output[['permno', 'yyyymm', 'RIO_Disp']]
         
         # For RIO_Turnover
         rio_turnover_output = data[['permno', 'time_avail_m', 'RIO_Turnover']].copy()
         rio_turnover_output = rio_turnover_output.dropna(subset=['RIO_Turnover'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(rio_turnover_output['time_avail_m']):
+            rio_turnover_output['time_avail_m'] = pd.to_datetime(rio_turnover_output['time_avail_m'])
+        
         rio_turnover_output['yyyymm'] = rio_turnover_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         rio_turnover_output = rio_turnover_output[['permno', 'yyyymm', 'RIO_Turnover']]
         
         # For RIO_Volatility
         rio_volatility_output = data[['permno', 'time_avail_m', 'RIO_Volatility']].copy()
         rio_volatility_output = rio_volatility_output.dropna(subset=['RIO_Volatility'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(rio_volatility_output['time_avail_m']):
+            rio_volatility_output['time_avail_m'] = pd.to_datetime(rio_volatility_output['time_avail_m'])
+        
         rio_volatility_output['yyyymm'] = rio_volatility_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         rio_volatility_output = rio_volatility_output[['permno', 'yyyymm', 'RIO_Volatility']]
         

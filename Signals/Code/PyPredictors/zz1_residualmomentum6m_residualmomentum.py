@@ -112,12 +112,20 @@ def zz1_residualmomentum6m_residualmomentum():
         # For ResidualMomentum6m (placebo)
         residualmomentum6m_output = data[['permno', 'time_avail_m', 'ResidualMomentum6m']].copy()
         residualmomentum6m_output = residualmomentum6m_output.dropna(subset=['ResidualMomentum6m'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(residualmomentum6m_output['time_avail_m']):
+            residualmomentum6m_output['time_avail_m'] = pd.to_datetime(residualmomentum6m_output['time_avail_m'])
+        
         residualmomentum6m_output['yyyymm'] = residualmomentum6m_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         residualmomentum6m_output = residualmomentum6m_output[['permno', 'yyyymm', 'ResidualMomentum6m']]
         
         # For ResidualMomentum (predictor)
         residualmomentum_output = data[['permno', 'time_avail_m', 'ResidualMomentum']].copy()
         residualmomentum_output = residualmomentum_output.dropna(subset=['ResidualMomentum'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(residualmomentum_output['time_avail_m']):
+            residualmomentum_output['time_avail_m'] = pd.to_datetime(residualmomentum_output['time_avail_m'])
+        
         residualmomentum_output['yyyymm'] = residualmomentum_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         residualmomentum_output = residualmomentum_output[['permno', 'yyyymm', 'ResidualMomentum']]
         

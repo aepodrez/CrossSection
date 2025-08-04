@@ -76,7 +76,7 @@ def bm():
         data.loc[data['time_avail_m_month'] != data['datadate_month'], 'me_datadate'] = np.nan
         
         # Forward fill missing values within each permno (equivalent to Stata's "bys permno (time_avail_m): replace me_datadate = me_datadate[_n-1] if me_datadate == .")
-        data['me_datadate'] = data.groupby('permno')['me_datadate'].fillna(method='ffill')
+        data[''me_datadate''] = data.groupby('permno')[''me_datadate''].ffill()
         
         # Calculate BM (equivalent to Stata's "gen BM = log(ceqt/me_datadate)")
         data['BM'] = np.log(data['ceqt'] / data['me_datadate'])
@@ -98,6 +98,10 @@ def bm():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

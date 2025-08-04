@@ -44,6 +44,10 @@ def zz1_zerotrade_zerotradealt1_zerotradealt12():
         logger.info("Calculating monthly aggregates")
         
         # Create monthly time period
+        # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(data['time_d']):
+            data['time_d'] = pd.to_datetime(data['time_d'])
+        
         data['time_avail_m'] = data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Calculate zero trade indicators and turnover
@@ -108,18 +112,30 @@ def zz1_zerotrade_zerotradealt1_zerotradealt12():
         # For zerotrade1M
         zerotrade1m_output = monthly_data[['permno', 'time_avail_m', 'zerotrade1M']].copy()
         zerotrade1m_output = zerotrade1m_output.dropna(subset=['zerotrade1M'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(zerotrade1m_output['time_avail_m']):
+            zerotrade1m_output['time_avail_m'] = pd.to_datetime(zerotrade1m_output['time_avail_m'])
+        
         zerotrade1m_output['yyyymm'] = zerotrade1m_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         zerotrade1m_output = zerotrade1m_output[['permno', 'yyyymm', 'zerotrade1M']]
         
         # For zerotrade6M
         zerotrade6m_output = monthly_data[['permno', 'time_avail_m', 'zerotrade6M']].copy()
         zerotrade6m_output = zerotrade6m_output.dropna(subset=['zerotrade6M'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(zerotrade6m_output['time_avail_m']):
+            zerotrade6m_output['time_avail_m'] = pd.to_datetime(zerotrade6m_output['time_avail_m'])
+        
         zerotrade6m_output['yyyymm'] = zerotrade6m_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         zerotrade6m_output = zerotrade6m_output[['permno', 'yyyymm', 'zerotrade6M']]
         
         # For zerotrade12M
         zerotrade12m_output = monthly_data[['permno', 'time_avail_m', 'zerotrade12M']].copy()
         zerotrade12m_output = zerotrade12m_output.dropna(subset=['zerotrade12M'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(zerotrade12m_output['time_avail_m']):
+            zerotrade12m_output['time_avail_m'] = pd.to_datetime(zerotrade12m_output['time_avail_m'])
+        
         zerotrade12m_output['yyyymm'] = zerotrade12m_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         zerotrade12m_output = zerotrade12m_output[['permno', 'yyyymm', 'zerotrade12M']]
         

@@ -1,0 +1,126 @@
+# CrossSection Project .gitignore
+
+# ============================================================
+# CREDENTIALS AND SECRETS
+# ============================================================
+secrets.py
+*.key
+*.pem
+*.p12
+.env
+.env.local
+.env.production
+
+# ============================================================
+# DATA FILES AND DIRECTORIES
+# ============================================================
+Signals/Data/
+Signals/Code/Data/
+Signals/Logs/
+Portfolios/Data/
+Portfolios/Results/
+Shipping/Data/
+Shipping/Results/
+
+# ============================================================
+# DATA FILE EXTENSIONS
+# ============================================================
+*.csv
+*.parquet
+*.h5
+*.hdf5
+*.xlsx
+*.xls
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ============================================================
+# LOG FILES
+# ============================================================
+*.log
+*.out
+*.err
+*.Rout
+*.e*
+*.o*
+
+# ============================================================
+# PYTHON
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ============================================================
+# R FILES
+# ============================================================
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rprofile
+*.Rproj
+
+# ============================================================
+# IDE AND EDITOR FILES
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================
+# OPERATING SYSTEM FILES
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# TEMPORARY FILES
+# ============================================================
+*.tmp
+*.temp
+deleteme*
+*.bak
+*.backup
+
+# ============================================================
+# HTML OUTPUT
+# ============================================================
+*.html 

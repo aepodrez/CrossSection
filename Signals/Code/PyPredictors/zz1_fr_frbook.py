@@ -45,6 +45,10 @@ def zz1_fr_frbook():
         
         # Generate year (equivalent to Stata's "gen year = yofd(dofm(time_avail_m))")
         data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        # Convert time_avail_m to datetime if needed for year extraction
+        if not pd.api.types.is_datetime64_any_dtype(data['time_avail_m']):
+            data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        
         data['year'] = data['time_avail_m'].dt.year
         
         # Merge with CompustatPensions data
@@ -136,6 +140,10 @@ def zz1_fr_frbook():
         # Save FR
         fr_data = data[['permno', 'time_avail_m', 'FR']].copy()
         fr_data = fr_data.dropna(subset=['FR'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(fr_data['time_avail_m']):
+            fr_data['time_avail_m'] = pd.to_datetime(fr_data['time_avail_m'])
+        
         fr_data['yyyymm'] = fr_data['time_avail_m'].dt.year * 100 + fr_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "FR.csv"
         fr_data[['permno', 'yyyymm', 'FR']].to_csv(csv_output_path, index=False)
@@ -144,6 +152,10 @@ def zz1_fr_frbook():
         # Save FRbook
         frbook_data = data[['permno', 'time_avail_m', 'FRbook']].copy()
         frbook_data = frbook_data.dropna(subset=['FRbook'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(frbook_data['time_avail_m']):
+            frbook_data['time_avail_m'] = pd.to_datetime(frbook_data['time_avail_m'])
+        
         frbook_data['yyyymm'] = frbook_data['time_avail_m'].dt.year * 100 + frbook_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "FRbook.csv"
         frbook_data[['permno', 'yyyymm', 'FRbook']].to_csv(csv_output_path, index=False)

@@ -49,7 +49,7 @@ def credratdg():
         )
         
         # Set first observation per gvkey to missing
-        compustat_data['credrat_dwn'] = compustat_data.groupby('gvkey')['credrat_dwn'].fillna(method='bfill')
+        compustat_data['credrat_dwn'] = compustat_data.groupby('gvkey')['credrat_dwn'].bfill()
         
         # Save temporary file
         temp_comp_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Temp/temp_comp_rat.csv")
@@ -151,6 +151,10 @@ def credratdg():
         merged_data.loc[downgrade_mask, 'CredRatDG'] = 1
         
         # Set to missing if year < 1979 (no data before that)
+        # Convert time_avail_m to datetime if needed for year extraction
+        if not pd.api.types.is_datetime64_any_dtype(merged_data['time_avail_m']):
+            merged_data['time_avail_m'] = pd.to_datetime(merged_data['time_avail_m'])
+        
         merged_data['year'] = merged_data['time_avail_m'].dt.year
         merged_data.loc[merged_data['year'] < 1979, 'CredRatDG'] = np.nan
         
@@ -171,6 +175,10 @@ def credratdg():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

@@ -154,6 +154,10 @@ def zz1_activism1_activism2():
         # Save Activism1
         activism1_data = data[['permno', 'time_avail_m', 'Activism1']].copy()
         activism1_data = activism1_data.dropna(subset=['Activism1'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(activism1_data['time_avail_m']):
+            activism1_data['time_avail_m'] = pd.to_datetime(activism1_data['time_avail_m'])
+        
         activism1_data['yyyymm'] = activism1_data['time_avail_m'].dt.year * 100 + activism1_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "Activism1.csv"
         activism1_data[['permno', 'yyyymm', 'Activism1']].to_csv(csv_output_path, index=False)
@@ -162,6 +166,10 @@ def zz1_activism1_activism2():
         # Save Activism2
         activism2_data = data[['permno', 'time_avail_m', 'Activism2']].copy()
         activism2_data = activism2_data.dropna(subset=['Activism2'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(activism2_data['time_avail_m']):
+            activism2_data['time_avail_m'] = pd.to_datetime(activism2_data['time_avail_m'])
+        
         activism2_data['yyyymm'] = activism2_data['time_avail_m'].dt.year * 100 + activism2_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "Activism2.csv"
         activism2_data[['permno', 'yyyymm', 'Activism2']].to_csv(csv_output_path, index=False)

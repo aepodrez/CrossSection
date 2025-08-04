@@ -171,12 +171,20 @@ def zz2_abnormalaccruals_abnormalaccrualspercent():
         # For AbnormalAccruals (predictor)
         abnormalaccruals_output = data[['permno', 'time_avail_m', 'AbnormalAccruals']].copy()
         abnormalaccruals_output = abnormalaccruals_output.dropna(subset=['AbnormalAccruals'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(abnormalaccruals_output['time_avail_m']):
+            abnormalaccruals_output['time_avail_m'] = pd.to_datetime(abnormalaccruals_output['time_avail_m'])
+        
         abnormalaccruals_output['yyyymm'] = abnormalaccruals_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         abnormalaccruals_output = abnormalaccruals_output[['permno', 'yyyymm', 'AbnormalAccruals']]
         
         # For AbnormalAccrualsPercent (placebo)
         abnormalaccrualspercent_output = data[['permno', 'time_avail_m', 'AbnormalAccrualsPercent']].copy()
         abnormalaccrualspercent_output = abnormalaccrualspercent_output.dropna(subset=['AbnormalAccrualsPercent'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(abnormalaccrualspercent_output['time_avail_m']):
+            abnormalaccrualspercent_output['time_avail_m'] = pd.to_datetime(abnormalaccrualspercent_output['time_avail_m'])
+        
         abnormalaccrualspercent_output['yyyymm'] = abnormalaccrualspercent_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         abnormalaccrualspercent_output = abnormalaccrualspercent_output[['permno', 'yyyymm', 'AbnormalAccrualsPercent']]
         

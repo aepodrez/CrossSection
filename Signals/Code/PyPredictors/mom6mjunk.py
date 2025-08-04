@@ -109,7 +109,7 @@ def mom6mjunk():
         
         # Fill missing credratciq with most recent (equivalent to Stata's tsfill and forward fill)
         data = data.sort_values(['permno', 'time_avail_m'])
-        data['credratciq'] = data.groupby('permno')['credratciq'].fillna(method='ffill')
+        data[''credratciq''] = data.groupby('permno')[''credratciq''].ffill()
         
         # Coalesce credit ratings (equivalent to Stata's "replace credrat = credratciq if credrat == .")
         data['credrat'] = data['credrat'].fillna(data['credratciq'])
@@ -152,6 +152,10 @@ def mom6mjunk():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

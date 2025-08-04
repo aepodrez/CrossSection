@@ -89,6 +89,10 @@ def zz1_ebm_bpebm():
         # Save EBM
         ebm_data = data[['permno', 'time_avail_m', 'EBM']].copy()
         ebm_data = ebm_data.dropna(subset=['EBM'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(ebm_data['time_avail_m']):
+            ebm_data['time_avail_m'] = pd.to_datetime(ebm_data['time_avail_m'])
+        
         ebm_data['yyyymm'] = ebm_data['time_avail_m'].dt.year * 100 + ebm_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "EBM.csv"
         ebm_data[['permno', 'yyyymm', 'EBM']].to_csv(csv_output_path, index=False)
@@ -97,6 +101,10 @@ def zz1_ebm_bpebm():
         # Save BPEBM
         bpebm_data = data[['permno', 'time_avail_m', 'BPEBM']].copy()
         bpebm_data = bpebm_data.dropna(subset=['BPEBM'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(bpebm_data['time_avail_m']):
+            bpebm_data['time_avail_m'] = pd.to_datetime(bpebm_data['time_avail_m'])
+        
         bpebm_data['yyyymm'] = bpebm_data['time_avail_m'].dt.year * 100 + bpebm_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "BPEBM.csv"
         bpebm_data[['permno', 'yyyymm', 'BPEBM']].to_csv(csv_output_path, index=False)

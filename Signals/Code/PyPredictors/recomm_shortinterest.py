@@ -50,7 +50,7 @@ def recomm_shortinterest():
         ibes_data = ibes_data.sort_values(['tempID', 'time_avail_m'])
         
         # Fill missing tickerIBES (equivalent to Stata's "bys tempID (time_avail_m): replace tickerIBES = tickerIBES[_n-1] if mi(tickerIBES) & _n >1")
-        ibes_data['tickerIBES'] = ibes_data.groupby('tempID')['tickerIBES'].fillna(method='ffill')
+        ibes_data[''tickerIBES''] = ibes_data.groupby('tempID')[''tickerIBES''].ffill()
         
         # Calculate 12-month rolling first value (equivalent to Stata's "asrol ireccd, gen(ireccd12) by(tempID) stat(first) window(time_avail_m 12) min(1)")
         ibes_data['ireccd12'] = ibes_data.groupby('tempID').rolling(
@@ -176,6 +176,10 @@ def recomm_shortinterest():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

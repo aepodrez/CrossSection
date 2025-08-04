@@ -70,6 +70,10 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         
         # Create time_avail_m (equivalent to Stata's "gen time_avail_m = mofd(time_d)")
         data['time_d'] = pd.to_datetime(data['time_d'])
+        # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(data['time_d']):
+            data['time_d'] = pd.to_datetime(data['time_d'])
+        
         data['time_avail_m'] = data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Get FF3 residuals within each month (equivalent to Stata's "bys permno time_avail_m: asreg ret mktrf smb hml, fit")
@@ -77,7 +81,32 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         data['_residuals'] = np.nan
         data['_Nobs'] = 0
         
+        # Add progress logging for the existing loop
+        unique_permnos = data['permno'].unique()
+        total_permnos = len(unique_permnos)
+        logger.info(f"Starting FF3 residual calculations for {total_permnos} unique stocks...")
+        
+        # Progress tracking variables
+        processed_permnos = 0
+        successful_regressions = 0
+        start_time = datetime.now()
+        
         for permno in data['permno'].unique():
+            # Progress logging every 1000 stocks or every 5%
+            if processed_permnos % 1000 == 0 or processed_permnos % max(1, total_permnos // 20) == 0:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                if processed_permnos > 0:
+                    avg_time_per_stock = elapsed / processed_permnos
+                    remaining_stocks = total_permnos - processed_permnos
+                    eta_seconds = remaining_stocks * avg_time_per_stock
+                    eta_minutes = eta_seconds / 60
+                    logger.info(f"Progress: {processed_permnos}/{total_permnos} stocks ({processed_permnos/total_permnos*100:.1f}%) - "
+                              f"Processed {successful_regressions} regressions - "
+                              f"ETA: {eta_minutes:.1f} minutes")
+                else:
+                    logger.info(f"Progress: {processed_permnos}/{total_permnos} stocks ({processed_permnos/total_permnos*100:.1f}%) - "
+                              f"Processed {successful_regressions} regressions")
+            
             for time_avail_m in data[data['permno'] == permno]['time_avail_m'].unique():
                 month_data = data[(data['permno'] == permno) & (data['time_avail_m'] == time_avail_m)]
                 
@@ -97,8 +126,19 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
                         # Store residuals and observation count
                         data.loc[month_data.index, '_residuals'] = residuals
                         data.loc[month_data.index, '_Nobs'] = len(month_data)
+                        successful_regressions += 1
                     except:
                         continue
+            
+            processed_permnos += 1
+        
+        # Final progress report
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Completed FF3 residual calculations:")
+        logger.info(f"  - Processed {processed_permnos}/{total_permnos} stocks")
+        logger.info(f"  - Successful {successful_regressions} regressions")
+        logger.info(f"  - Total time: {elapsed/60:.1f} minutes")
+        logger.info(f"  - Average time per stock: {elapsed/processed_permnos:.2f} seconds")
         
         # Keep only observations with sufficient data (equivalent to Stata's "keep if _Nobs >= 15")
         data = data[data['_Nobs'] >= 15]
@@ -128,6 +168,10 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         # Save RealizedVol
         realizedvol_data = monthly_stats[['permno', 'time_avail_m', 'RealizedVol']].copy()
         realizedvol_data = realizedvol_data.dropna(subset=['RealizedVol'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(realizedvol_data['time_avail_m']):
+            realizedvol_data['time_avail_m'] = pd.to_datetime(realizedvol_data['time_avail_m'])
+        
         realizedvol_data['yyyymm'] = realizedvol_data['time_avail_m'].dt.year * 100 + realizedvol_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "RealizedVol.csv"
         realizedvol_data[['permno', 'yyyymm', 'RealizedVol']].to_csv(csv_output_path, index=False)
@@ -136,6 +180,10 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         # Save IdioVol3F
         idiovol3f_data = monthly_stats[['permno', 'time_avail_m', 'IdioVol3F']].copy()
         idiovol3f_data = idiovol3f_data.dropna(subset=['IdioVol3F'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(idiovol3f_data['time_avail_m']):
+            idiovol3f_data['time_avail_m'] = pd.to_datetime(idiovol3f_data['time_avail_m'])
+        
         idiovol3f_data['yyyymm'] = idiovol3f_data['time_avail_m'].dt.year * 100 + idiovol3f_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "IdioVol3F.csv"
         idiovol3f_data[['permno', 'yyyymm', 'IdioVol3F']].to_csv(csv_output_path, index=False)
@@ -144,6 +192,10 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         # Save ReturnSkew3F
         returnskew3f_data = monthly_stats[['permno', 'time_avail_m', 'ReturnSkew3F']].copy()
         returnskew3f_data = returnskew3f_data.dropna(subset=['ReturnSkew3F'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(returnskew3f_data['time_avail_m']):
+            returnskew3f_data['time_avail_m'] = pd.to_datetime(returnskew3f_data['time_avail_m'])
+        
         returnskew3f_data['yyyymm'] = returnskew3f_data['time_avail_m'].dt.year * 100 + returnskew3f_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "ReturnSkew3F.csv"
         returnskew3f_data[['permno', 'yyyymm', 'ReturnSkew3F']].to_csv(csv_output_path, index=False)

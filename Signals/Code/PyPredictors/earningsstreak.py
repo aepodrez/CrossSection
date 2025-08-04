@@ -104,7 +104,7 @@ def earningsstreak():
         merged_data = merged_data.sort_values(['permno', 'time_avail_m'])
         
         # Forward fill anndats_act (equivalent to Stata's "replace anndats_act = l1.anndats_act if anndats_act == .")
-        merged_data['anndats_act'] = merged_data.groupby('permno')['anndats_act'].fillna(method='ffill')
+        merged_data[''anndats_act''] = merged_data.groupby('permno')[''anndats_act''].ffill()
         
         # Drop missing anndats_act (equivalent to Stata's "drop if anndats_act == .")
         merged_data = merged_data.dropna(subset=['anndats_act'])
@@ -119,7 +119,7 @@ def earningsstreak():
         merged_data['EarningsStreak'] = merged_data['surp']
         
         # Forward fill EarningsStreak (equivalent to Stata's "replace EarningsStreak = l1.EarningsStreak if EarningsStreak == .")
-        merged_data['EarningsStreak'] = merged_data.groupby('permno')['EarningsStreak'].fillna(method='ffill')
+        merged_data[''EarningsStreak''] = merged_data.groupby('permno')[''EarningsStreak''].ffill()
         
         logger.info("Successfully calculated EarningsStreak signal")
         
@@ -138,6 +138,10 @@ def earningsstreak():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

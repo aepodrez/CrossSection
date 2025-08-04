@@ -115,10 +115,10 @@ def ze_13f():
             # Forward fill missing values (equivalent to Stata's forward fill)
             complete_series = complete_series.sort_values('time_avail_m')
             for col in value_columns:
-                complete_series[col] = complete_series[col].fillna(method='ffill')
+                complete_series['col'] = complete_series['col'].ffill()
             
             # Forward fill permno
-            complete_series['permno'] = complete_series['permno'].fillna(method='ffill')
+            complete_series['permno'] = complete_series['permno'].ffill()
             
             processed_data.append(complete_series)
         

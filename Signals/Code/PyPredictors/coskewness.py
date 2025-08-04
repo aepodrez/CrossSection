@@ -64,6 +64,11 @@ def coskewness():
         
         # Create time variables
         data['time_m'] = data['time_avail_m']
+        
+        # Convert time_avail_m to datetime if it's not already
+        if not pd.api.types.is_datetime64_any_dtype(data['time_avail_m']):
+            data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        
         data['m60'] = data['time_avail_m'].dt.month - 1  # month in 60-month calendar (0-59)
         
         logger.info("Processing coskewness by 60-month window...")
@@ -82,7 +87,7 @@ def coskewness():
             
             # Forward fill time_avail_m within each permno
             window_data = window_data.sort_values(['permno', 'time_avail_m'])
-            window_data['time_avail_m'] = window_data.groupby('permno')['time_avail_m'].fillna(method='ffill')
+            window_data['time_avail_m'] = window_data.groupby('permno')['time_avail_m'].ffill()
             
             # Drop observations without time_avail_m
             window_data = window_data.dropna(subset=['time_avail_m'])
@@ -162,6 +167,10 @@ def coskewness():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

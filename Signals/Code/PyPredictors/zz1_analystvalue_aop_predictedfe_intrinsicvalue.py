@@ -254,6 +254,10 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         # Save AnalystValue
         analystvalue_data = data[['permno', 'time_avail_m', 'AnalystValue']].copy()
         analystvalue_data = analystvalue_data.dropna(subset=['AnalystValue'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(analystvalue_data['time_avail_m']):
+            analystvalue_data['time_avail_m'] = pd.to_datetime(analystvalue_data['time_avail_m'])
+        
         analystvalue_data['yyyymm'] = analystvalue_data['time_avail_m'].dt.year * 100 + analystvalue_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "AnalystValue.csv"
         analystvalue_data[['permno', 'yyyymm', 'AnalystValue']].to_csv(csv_output_path, index=False)
@@ -262,6 +266,10 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         # Save AOP
         aop_data = data[['permno', 'time_avail_m', 'AOP']].copy()
         aop_data = aop_data.dropna(subset=['AOP'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(aop_data['time_avail_m']):
+            aop_data['time_avail_m'] = pd.to_datetime(aop_data['time_avail_m'])
+        
         aop_data['yyyymm'] = aop_data['time_avail_m'].dt.year * 100 + aop_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "AOP.csv"
         aop_data[['permno', 'yyyymm', 'AOP']].to_csv(csv_output_path, index=False)
@@ -270,6 +278,10 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         # Save PredictedFE
         predictedfe_data = data[['permno', 'time_avail_m', 'PredictedFE']].copy()
         predictedfe_data = predictedfe_data.dropna(subset=['PredictedFE'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(predictedfe_data['time_avail_m']):
+            predictedfe_data['time_avail_m'] = pd.to_datetime(predictedfe_data['time_avail_m'])
+        
         predictedfe_data['yyyymm'] = predictedfe_data['time_avail_m'].dt.year * 100 + predictedfe_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "PredictedFE.csv"
         predictedfe_data[['permno', 'yyyymm', 'PredictedFE']].to_csv(csv_output_path, index=False)
@@ -278,6 +290,10 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         # Save IntrinsicValue as placebo
         intrinsicvalue_data = data[['permno', 'time_avail_m', 'IntrinsicValue']].copy()
         intrinsicvalue_data = intrinsicvalue_data.dropna(subset=['IntrinsicValue'])
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(intrinsicvalue_data['time_avail_m']):
+            intrinsicvalue_data['time_avail_m'] = pd.to_datetime(intrinsicvalue_data['time_avail_m'])
+        
         intrinsicvalue_data['yyyymm'] = intrinsicvalue_data['time_avail_m'].dt.year * 100 + intrinsicvalue_data['time_avail_m'].dt.month
         csv_output_path = predictors_dir / "IntrinsicValue.csv"
         intrinsicvalue_data[['permno', 'yyyymm', 'IntrinsicValue']].to_csv(csv_output_path, index=False)

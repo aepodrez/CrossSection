@@ -60,7 +60,7 @@ def n_ibes_unadjustedactuals(wrds_conn=None):
         available_columns = [col for col in fill_columns if col in data.columns]
         
         for col in available_columns:
-            data[col] = data.groupby('id')[col].fillna(method='ffill')
+            data['col'] = data.groupby('id')['col'].ffill()
             logger.info(f"Forward filled missing values in {col}")
         
         # Drop id and statpers columns

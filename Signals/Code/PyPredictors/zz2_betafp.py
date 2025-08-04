@@ -116,6 +116,10 @@ def zz2_betafp():
         
         # Convert to monthly frequency
         logger.info("Converting to monthly frequency")
+        # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(data['time_d']):
+            data['time_d'] = pd.to_datetime(data['time_d'])
+        
         data['time_avail_m'] = data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Aggregate to monthly level (keep last observation per month)
@@ -128,6 +132,10 @@ def zz2_betafp():
         # For BetaFP
         betafp_output = monthly_data[['permno', 'time_avail_m', 'BetaFP']].copy()
         betafp_output = betafp_output.dropna(subset=['BetaFP'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(betafp_output['time_avail_m']):
+            betafp_output['time_avail_m'] = pd.to_datetime(betafp_output['time_avail_m'])
+        
         betafp_output['yyyymm'] = betafp_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         betafp_output = betafp_output[['permno', 'yyyymm', 'BetaFP']]
         

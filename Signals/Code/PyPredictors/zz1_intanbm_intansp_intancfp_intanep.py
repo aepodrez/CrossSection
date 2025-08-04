@@ -170,24 +170,40 @@ def zz1_intanbm_intansp_intancfp_intanep():
         # For IntanBM
         intanbm_output = data[['permno', 'time_avail_m', 'IntanBM']].copy()
         intanbm_output = intanbm_output.dropna(subset=['IntanBM'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(intanbm_output['time_avail_m']):
+            intanbm_output['time_avail_m'] = pd.to_datetime(intanbm_output['time_avail_m'])
+        
         intanbm_output['yyyymm'] = intanbm_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         intanbm_output = intanbm_output[['permno', 'yyyymm', 'IntanBM']]
         
         # For IntanSP
         intansp_output = data[['permno', 'time_avail_m', 'IntanSP']].copy()
         intansp_output = intansp_output.dropna(subset=['IntanSP'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(intansp_output['time_avail_m']):
+            intansp_output['time_avail_m'] = pd.to_datetime(intansp_output['time_avail_m'])
+        
         intansp_output['yyyymm'] = intansp_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         intansp_output = intansp_output[['permno', 'yyyymm', 'IntanSP']]
         
         # For IntanCFP
         intancfp_output = data[['permno', 'time_avail_m', 'IntanCFP']].copy()
         intancfp_output = intancfp_output.dropna(subset=['IntanCFP'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(intancfp_output['time_avail_m']):
+            intancfp_output['time_avail_m'] = pd.to_datetime(intancfp_output['time_avail_m'])
+        
         intancfp_output['yyyymm'] = intancfp_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         intancfp_output = intancfp_output[['permno', 'yyyymm', 'IntanCFP']]
         
         # For IntanEP
         intanep_output = data[['permno', 'time_avail_m', 'IntanEP']].copy()
         intanep_output = intanep_output.dropna(subset=['IntanEP'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(intanep_output['time_avail_m']):
+            intanep_output['time_avail_m'] = pd.to_datetime(intanep_output['time_avail_m'])
+        
         intanep_output['yyyymm'] = intanep_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         intanep_output = intanep_output[['permno', 'yyyymm', 'IntanEP']]
         

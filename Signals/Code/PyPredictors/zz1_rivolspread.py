@@ -122,6 +122,10 @@ def zz1_rivolspread():
         
         # For RIVolSpread
         rivolspread_output = data[['permno', 'time_avail_m', 'RIVolSpread']].copy()
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(rivolspread_output['time_avail_m']):
+            rivolspread_output['time_avail_m'] = pd.to_datetime(rivolspread_output['time_avail_m'])
+        
         rivolspread_output['yyyymm'] = rivolspread_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         rivolspread_output = rivolspread_output[['permno', 'yyyymm', 'RIVolSpread']]
         

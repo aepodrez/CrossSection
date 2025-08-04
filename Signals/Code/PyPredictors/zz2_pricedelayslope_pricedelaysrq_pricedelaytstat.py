@@ -209,7 +209,7 @@ def zz2_pricedelayslope_pricedelaysrq_pricedelaytstat():
         
         # Forward fill missing values
         for col in ['PriceDelaySlope', 'PriceDelaySRQ', 'PriceDelayTstat']:
-            complete_data[col] = complete_data.groupby('permno')[col].fillna(method='ffill')
+            complete_data['col'] = complete_data.groupby('permno')['col'].ffill()
         
         # Prepare output data
         logger.info("Preparing output data")
@@ -217,18 +217,30 @@ def zz2_pricedelayslope_pricedelaysrq_pricedelaytstat():
         # For PriceDelaySlope
         pricedelayslope_output = complete_data[['permno', 'time_avail_m', 'PriceDelaySlope']].copy()
         pricedelayslope_output = pricedelayslope_output.dropna(subset=['PriceDelaySlope'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(pricedelayslope_output['time_avail_m']):
+            pricedelayslope_output['time_avail_m'] = pd.to_datetime(pricedelayslope_output['time_avail_m'])
+        
         pricedelayslope_output['yyyymm'] = pricedelayslope_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         pricedelayslope_output = pricedelayslope_output[['permno', 'yyyymm', 'PriceDelaySlope']]
         
         # For PriceDelaySRQ
         pricedelaysrq_output = complete_data[['permno', 'time_avail_m', 'PriceDelaySRQ']].copy()
         pricedelaysrq_output = pricedelaysrq_output.dropna(subset=['PriceDelaySRQ'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(pricedelaysrq_output['time_avail_m']):
+            pricedelaysrq_output['time_avail_m'] = pd.to_datetime(pricedelaysrq_output['time_avail_m'])
+        
         pricedelaysrq_output['yyyymm'] = pricedelaysrq_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         pricedelaysrq_output = pricedelaysrq_output[['permno', 'yyyymm', 'PriceDelaySRQ']]
         
         # For PriceDelayTstat
         pricedelaytstat_output = complete_data[['permno', 'time_avail_m', 'PriceDelayTstat']].copy()
         pricedelaytstat_output = pricedelaytstat_output.dropna(subset=['PriceDelayTstat'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(pricedelaytstat_output['time_avail_m']):
+            pricedelaytstat_output['time_avail_m'] = pd.to_datetime(pricedelaytstat_output['time_avail_m'])
+        
         pricedelaytstat_output['yyyymm'] = pricedelaytstat_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         pricedelaytstat_output = pricedelaytstat_output[['permno', 'yyyymm', 'PriceDelayTstat']]
         

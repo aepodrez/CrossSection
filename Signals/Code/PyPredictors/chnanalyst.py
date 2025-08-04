@@ -47,7 +47,7 @@ def chnanalyst():
         )
         
         # Forward fill meanest for missing tmp values
-        ibes_data['meanest'] = ibes_data.groupby('tickerIBES')['meanest'].fillna(method='ffill')
+        ibes_data[''meanest''] = ibes_data.groupby('tickerIBES')[''meanest''].ffill()
         
         # Keep required variables
         ibes_data = ibes_data[['tickerIBES', 'time_avail_m', 'numest', 'statpers', 'fpedats']]
@@ -135,6 +135,10 @@ def chnanalyst():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

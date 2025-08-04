@@ -98,6 +98,10 @@ def zz2_betavix():
         
         # Convert to monthly frequency
         logger.info("Converting to monthly frequency")
+        # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(data['time_d']):
+            data['time_d'] = pd.to_datetime(data['time_d'])
+        
         data['time_avail_m'] = data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Aggregate to monthly level (keep last observation per month)
@@ -110,6 +114,10 @@ def zz2_betavix():
         # For BetaVIX
         betavix_output = monthly_data[['permno', 'time_avail_m', 'betaVIX']].copy()
         betavix_output = betavix_output.dropna(subset=['betaVIX'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(betavix_output['time_avail_m']):
+            betavix_output['time_avail_m'] = pd.to_datetime(betavix_output['time_avail_m'])
+        
         betavix_output['yyyymm'] = betavix_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         betavix_output = betavix_output[['permno', 'yyyymm', 'betaVIX']]
         

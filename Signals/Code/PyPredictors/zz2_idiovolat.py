@@ -96,6 +96,10 @@ def zz2_idiovolat():
         
         # Convert to monthly frequency
         logger.info("Converting to monthly frequency")
+        # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(data['time_d']):
+            data['time_d'] = pd.to_datetime(data['time_d'])
+        
         data['time_avail_m'] = data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Aggregate to monthly level (keep last observation per month)
@@ -108,6 +112,10 @@ def zz2_idiovolat():
         # For IdioVolAHT
         idiovolat_output = monthly_data[['permno', 'time_avail_m', 'IdioVolAHT']].copy()
         idiovolat_output = idiovolat_output.dropna(subset=['IdioVolAHT'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(idiovolat_output['time_avail_m']):
+            idiovolat_output['time_avail_m'] = pd.to_datetime(idiovolat_output['time_avail_m'])
+        
         idiovolat_output['yyyymm'] = idiovolat_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         idiovolat_output = idiovolat_output[['permno', 'yyyymm', 'IdioVolAHT']]
         

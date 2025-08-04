@@ -100,12 +100,20 @@ def zz1_optionvolume1_optionvolume2():
         # For OptionVolume1
         optionvolume1_output = data[['permno', 'time_avail_m', 'OptionVolume1']].copy()
         optionvolume1_output = optionvolume1_output.dropna(subset=['OptionVolume1'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(optionvolume1_output['time_avail_m']):
+            optionvolume1_output['time_avail_m'] = pd.to_datetime(optionvolume1_output['time_avail_m'])
+        
         optionvolume1_output['yyyymm'] = optionvolume1_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         optionvolume1_output = optionvolume1_output[['permno', 'yyyymm', 'OptionVolume1']]
         
         # For OptionVolume2
         optionvolume2_output = data[['permno', 'time_avail_m', 'OptionVolume2']].copy()
         optionvolume2_output = optionvolume2_output.dropna(subset=['OptionVolume2'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(optionvolume2_output['time_avail_m']):
+            optionvolume2_output['time_avail_m'] = pd.to_datetime(optionvolume2_output['time_avail_m'])
+        
         optionvolume2_output['yyyymm'] = optionvolume2_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         optionvolume2_output = optionvolume2_output[['permno', 'yyyymm', 'OptionVolume2']]
         

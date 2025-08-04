@@ -114,7 +114,7 @@ def divyieldst():
         merged_data = merged_data.sort_values(['permno', 'time_avail_m'])
         
         # Replace missing cd3 with lagged value (equivalent to Stata's "replace cd3 = l1.cd3 if cd3 == .")
-        merged_data['cd3'] = merged_data.groupby('permno')['cd3'].fillna(method='ffill')
+        merged_data[''cd3''] = merged_data.groupby('permno')[''cd3''].ffill()
         
         # Replace missing divamt with 0 (equivalent to Stata's "replace divamt = 0 if divamt == .")
         merged_data['divamt'] = merged_data['divamt'].fillna(0)
@@ -177,6 +177,10 @@ def divyieldst():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

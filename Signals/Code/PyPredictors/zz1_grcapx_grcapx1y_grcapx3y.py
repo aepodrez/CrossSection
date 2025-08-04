@@ -89,18 +89,30 @@ def zz1_grcapx_grcapx1y_grcapx3y():
         # For grcapx (predictor)
         grcapx_output = data[['permno', 'time_avail_m', 'grcapx']].copy()
         grcapx_output = grcapx_output.dropna(subset=['grcapx'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(grcapx_output['time_avail_m']):
+            grcapx_output['time_avail_m'] = pd.to_datetime(grcapx_output['time_avail_m'])
+        
         grcapx_output['yyyymm'] = grcapx_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         grcapx_output = grcapx_output[['permno', 'yyyymm', 'grcapx']]
         
         # For grcapx1y (placebo)
         grcapx1y_output = data[['permno', 'time_avail_m', 'grcapx1y']].copy()
         grcapx1y_output = grcapx1y_output.dropna(subset=['grcapx1y'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(grcapx1y_output['time_avail_m']):
+            grcapx1y_output['time_avail_m'] = pd.to_datetime(grcapx1y_output['time_avail_m'])
+        
         grcapx1y_output['yyyymm'] = grcapx1y_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         grcapx1y_output = grcapx1y_output[['permno', 'yyyymm', 'grcapx1y']]
         
         # For grcapx3y (predictor)
         grcapx3y_output = data[['permno', 'time_avail_m', 'grcapx3y']].copy()
         grcapx3y_output = grcapx3y_output.dropna(subset=['grcapx3y'])
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(grcapx3y_output['time_avail_m']):
+            grcapx3y_output['time_avail_m'] = pd.to_datetime(grcapx3y_output['time_avail_m'])
+        
         grcapx3y_output['yyyymm'] = grcapx3y_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         grcapx3y_output = grcapx3y_output[['permno', 'yyyymm', 'grcapx3y']]
         

@@ -38,6 +38,10 @@ def betatailrisk():
         
         # Convert time_d to datetime and create time_avail_m
         daily_data['time_d'] = pd.to_datetime(daily_data['time_d'])
+        # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(daily_data['time_d']):
+            daily_data['time_d'] = pd.to_datetime(daily_data['time_d'])
+        
         daily_data['time_avail_m'] = daily_data['time_d'].dt.to_period('M')
         
         # Calculate 5th percentile returns by month (equivalent to Stata's "gcollapse (p5) ret, by(time_avail_m)")
@@ -157,6 +161,10 @@ def betatailrisk():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

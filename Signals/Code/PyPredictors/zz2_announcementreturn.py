@@ -123,6 +123,10 @@ def zz2_announcementreturn():
         }).reset_index()
         
         # Convert daily date to monthly date
+        # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(announcement_data['time_d']):
+            announcement_data['time_d'] = pd.to_datetime(announcement_data['time_d'])
+        
         announcement_data['time_avail_m'] = announcement_data['time_d'].dt.to_period('M').dt.to_timestamp()
         announcement_data = announcement_data[['permno', 'time_avail_m', 'AnnouncementReturn']]
         announcement_data = announcement_data.dropna(subset=['time_avail_m'])
@@ -169,6 +173,10 @@ def zz2_announcementreturn():
         
         # For AnnouncementReturn
         announcementreturn_output = complete_data[['permno', 'time_avail_m', 'AnnouncementReturn']].copy()
+        # Convert time_avail_m to datetime if needed for strftime
+        if not pd.api.types.is_datetime64_any_dtype(announcementreturn_output['time_avail_m']):
+            announcementreturn_output['time_avail_m'] = pd.to_datetime(announcementreturn_output['time_avail_m'])
+        
         announcementreturn_output['yyyymm'] = announcementreturn_output['time_avail_m'].dt.strftime('%Y%m').astype(int)
         announcementreturn_output = announcementreturn_output[['permno', 'yyyymm', 'AnnouncementReturn']]
         

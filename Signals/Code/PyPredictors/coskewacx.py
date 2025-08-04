@@ -85,11 +85,15 @@ def coskewacx():
                 continue
             
             # Create time_avail_m (end of month)
-            month_data['time_avail_m'] = month_data['time_d'].dt.to_period('M')
+            # Convert time_d to datetime if needed for period conversion
+        if not pd.api.types.is_datetime64_any_dtype(month_data['time_d']):
+            month_data['time_d'] = pd.to_datetime(month_data['time_d'])
+        
+        month_data['time_avail_m'] = month_data['time_d'].dt.to_period('M')
             
             # Forward fill time_avail_m within each permno
             month_data = month_data.sort_values(['permno', 'time_d'])
-            month_data['time_avail_m'] = month_data.groupby('permno')['time_avail_m'].fillna(method='ffill')
+            month_data['time_avail_m'] = month_data.groupby('permno')['time_avail_m'].ffill()
             
             # Drop observations without time_avail_m
             month_data = month_data.dropna(subset=['time_avail_m'])
@@ -165,6 +169,10 @@ def coskewacx():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file

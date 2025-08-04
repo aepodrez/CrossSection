@@ -131,6 +131,10 @@ def retconglomerate():
         
         # Keep if fiscal year matches calendar year
         standalone_data['time_avail_m'] = pd.to_datetime(standalone_data['time_avail_m'])
+        # Convert time_avail_m to datetime if needed for year extraction
+        if not pd.api.types.is_datetime64_any_dtype(standalone_data['time_avail_m']):
+            standalone_data['time_avail_m'] = pd.to_datetime(standalone_data['time_avail_m'])
+        
         standalone_data['year'] = standalone_data['time_avail_m'].dt.year
         standalone_data = standalone_data[standalone_data['fyear'] == standalone_data['year']]
         
@@ -153,6 +157,10 @@ def retconglomerate():
         
         # Keep if fiscal year matches calendar year
         conglomerate_data['time_avail_m'] = pd.to_datetime(conglomerate_data['time_avail_m'])
+        # Convert time_avail_m to datetime if needed for year extraction
+        if not pd.api.types.is_datetime64_any_dtype(conglomerate_data['time_avail_m']):
+            conglomerate_data['time_avail_m'] = pd.to_datetime(conglomerate_data['time_avail_m'])
+        
         conglomerate_data['year'] = conglomerate_data['time_avail_m'].dt.year
         conglomerate_data = conglomerate_data[conglomerate_data['fyear'] == conglomerate_data['year']]
         
@@ -183,6 +191,10 @@ def retconglomerate():
         logger.info(f"Final dataset: {len(output_data)} observations")
         
         # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
