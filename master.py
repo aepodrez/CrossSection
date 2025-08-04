@@ -37,12 +37,12 @@ from fredapi import Fred
 PROJECT_PATH = "/Users/alexpodrez/Documents/CrossSection/"  # required, should point to project root
 RSCRIPT_PATH = "/usr/local/bin/Rscript"  # optional, used for like 3 signals
 
-# Import secrets (API keys and credentials)
+# Import conn_secrets (API keys and credentials)
 try:
-    from secrets import FRED_API_KEY, WRDS_CONNECTION
+    from conn_secrets import FRED_API_KEY, WRDS_CONNECTION
 except ImportError:
-    print("ERROR: secrets.py file not found!")
-    print("Please create secrets.py with your API keys:")
+    print("ERROR: conn_secrets.py file not found!")
+    print("Please create conn_secrets.py with your API keys:")
     print("FRED_API_KEY = 'your_fred_api_key'")
     print("WRDS_CONNECTION = 'your_wrds_connection'")
     sys.exit(1)

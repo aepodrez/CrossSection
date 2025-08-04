@@ -76,7 +76,7 @@ def bm():
         data.loc[data['time_avail_m_month'] != data['datadate_month'], 'me_datadate'] = np.nan
         
         # Forward fill missing values within each permno (equivalent to Stata's "bys permno (time_avail_m): replace me_datadate = me_datadate[_n-1] if me_datadate == .")
-        data[''me_datadate''] = data.groupby('permno')[''me_datadate''].ffill()
+        data['me_datadate'] = data.groupby('permno')['me_datadate'].ffill()
         
         # Calculate BM (equivalent to Stata's "gen BM = log(ceqt/me_datadate)")
         data['BM'] = np.log(data['ceqt'] / data['me_datadate'])

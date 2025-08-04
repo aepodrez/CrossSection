@@ -51,7 +51,7 @@ def rev6():
         ibes_data = ibes_data.sort_values(['tickerIBES', 'fpedats'])
         
         # Forward fill meanest for missing tmp (equivalent to Stata's "bys tickerIBES: replace meanest = meanest[_n-1] if mi(tmp) & fpedats == fpedats[_n-1]")
-        ibes_data[''meanest''] = ibes_data.groupby('tickerIBES')[''meanest''].ffill()
+        ibes_data['meanest'] = ibes_data.groupby('tickerIBES')['meanest'].ffill()
         
         # Drop tmp column
         ibes_data = ibes_data.drop('tmp', axis=1)

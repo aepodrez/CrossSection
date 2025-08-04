@@ -109,7 +109,7 @@ def mom6mjunk():
         
         # Fill missing credratciq with most recent (equivalent to Stata's tsfill and forward fill)
         data = data.sort_values(['permno', 'time_avail_m'])
-        data[''credratciq''] = data.groupby('permno')[''credratciq''].ffill()
+        data['credratciq'] = data.groupby('permno')['credratciq'].ffill()
         
         # Coalesce credit ratings (equivalent to Stata's "replace credrat = credratciq if credrat == .")
         data['credrat'] = data['credrat'].fillna(data['credratciq'])

@@ -50,7 +50,7 @@ def recomm_shortinterest():
         ibes_data = ibes_data.sort_values(['tempID', 'time_avail_m'])
         
         # Fill missing tickerIBES (equivalent to Stata's "bys tempID (time_avail_m): replace tickerIBES = tickerIBES[_n-1] if mi(tickerIBES) & _n >1")
-        ibes_data[''tickerIBES''] = ibes_data.groupby('tempID')[''tickerIBES''].ffill()
+        ibes_data['tickerIBES'] = ibes_data.groupby('tempID')['tickerIBES'].ffill()
         
         # Calculate 12-month rolling first value (equivalent to Stata's "asrol ireccd, gen(ireccd12) by(tempID) stat(first) window(time_avail_m 12) min(1)")
         ibes_data['ireccd12'] = ibes_data.groupby('tempID').rolling(

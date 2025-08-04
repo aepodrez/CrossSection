@@ -131,8 +131,8 @@ def zc_governanceindex():
             
             # Forward fill missing values (equivalent to Stata's forward fill)
             complete_series = complete_series.sort_values('time_avail_m')
-                    complete_series['G'] = complete_series['G'].ffill()
-        complete_series['ticker'] = complete_series['ticker'].ffill()
+            complete_series['G'] = complete_series['G'].ffill()
+            complete_series['ticker'] = complete_series['ticker'].ffill()
             
             processed_data.append(complete_series)
         

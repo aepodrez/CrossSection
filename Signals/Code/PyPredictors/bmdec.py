@@ -80,7 +80,7 @@ def bmdec():
         data['tempDecME'] = data.groupby(['permno', 'tempYear'])['tempME'].transform('min')
         
         # Forward fill December market equity within each permno
-        data[''tempDecME''] = data.groupby('permno')[''tempDecME''].ffill()
+        data['tempDecME'] = data.groupby('permno')['tempDecME'].ffill()
         
         # Compute book equity
         # Set txditc to 0 if missing (equivalent to Stata's "replace txditc = 0 if mi(txditc)")

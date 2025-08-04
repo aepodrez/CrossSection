@@ -177,7 +177,7 @@ def ms():
         data.loc[data['month_avail'] != data['month_date'], 'tempMS'] = np.nan
         
         # Forward fill missing values within each permno
-        data[''tempMS''] = data.groupby('permno')[''tempMS''].ffill()
+        data['tempMS'] = data.groupby('permno')['tempMS'].ffill()
         
         # Create final MS score
         data['MS'] = data['tempMS']

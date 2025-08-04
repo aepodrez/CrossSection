@@ -47,7 +47,7 @@ def chnanalyst():
         )
         
         # Forward fill meanest for missing tmp values
-        ibes_data[''meanest''] = ibes_data.groupby('tickerIBES')[''meanest''].ffill()
+        ibes_data['meanest'] = ibes_data.groupby('tickerIBES')['meanest'].ffill()
         
         # Keep required variables
         ibes_data = ibes_data[['tickerIBES', 'time_avail_m', 'numest', 'statpers', 'fpedats']]

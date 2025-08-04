@@ -86,10 +86,10 @@ def coskewacx():
             
             # Create time_avail_m (end of month)
             # Convert time_d to datetime if needed for period conversion
-        if not pd.api.types.is_datetime64_any_dtype(month_data['time_d']):
-            month_data['time_d'] = pd.to_datetime(month_data['time_d'])
-        
-        month_data['time_avail_m'] = month_data['time_d'].dt.to_period('M')
+            if not pd.api.types.is_datetime64_any_dtype(month_data['time_d']):
+                month_data['time_d'] = pd.to_datetime(month_data['time_d'])
+            
+            month_data['time_avail_m'] = month_data['time_d'].dt.to_period('M')
             
             # Forward fill time_avail_m within each permno
             month_data = month_data.sort_values(['permno', 'time_d'])

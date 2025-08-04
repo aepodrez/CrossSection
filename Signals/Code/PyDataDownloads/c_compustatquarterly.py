@@ -56,25 +56,25 @@ def c_compustatquarterly(wrds_conn=None):
         logger.info(f"After keeping most recent per quarter: {len(data)} records")
         
         # Data availability assumed as discussed in https://github.com/OpenSourceAP/CrossSection/issues/50
-        # Assume data available with a 3 month lag
+        # Assume data available with a 3 month lag (equivalent to Stata's "gen time_avail_m = mofd(datadate) + 3")
         data['time_avail_m'] = pd.to_datetime(data['datadate']) + pd.DateOffset(months=3)
         data['time_avail_m'] = data['time_avail_m'].dt.to_period('M')
         
-        # Patch cases with earlier data availability (following Stata exactly)
-        # Replace time_avail_m if rdq is available and earlier
+        # Patch cases with earlier data availability (equivalent to Stata's "replace time_avail_m = mofd(rdq) if !mi(rdq) & mofd(rdq) > time_avail_m")
         rdq_available = data['rdq'].notna()
-        rdq_earlier = (pd.to_datetime(data['rdq']) + pd.DateOffset(months=3)) > data['time_avail_m'].dt.to_timestamp()
+        rdq_time_avail = pd.to_datetime(data['rdq']) + pd.DateOffset(months=3)
+        rdq_time_avail = rdq_time_avail.dt.to_period('M')
+        rdq_earlier = rdq_time_avail > data['time_avail_m']
         mask = rdq_available & rdq_earlier
-        data.loc[mask, 'time_avail_m'] = (pd.to_datetime(data.loc[mask, 'rdq']) + 
-                                         pd.DateOffset(months=3)).dt.to_period('M')
+        data.loc[mask, 'time_avail_m'] = rdq_time_avail[mask]
         
-        # Drop cases with very late release (more than 6 months difference)
-        # Following Stata: drop if mofd(rdq) - mofd(datadate) > 6 & !mi(rdq)
+        # Drop cases with very late release (equivalent to Stata's "drop if mofd(rdq) - mofd(datadate) > 6 & !mi(rdq)")
         rdq_available = data['rdq'].notna()
-        date_diff = (pd.to_datetime(data['rdq']) - pd.to_datetime(data['datadate'])).dt.days
-        late_release = date_diff > 180
-        mask = rdq_available & late_release
-        data = data[~mask]
+        if rdq_available.any():
+            date_diff = (pd.to_datetime(data['rdq']) - pd.to_datetime(data['datadate'])).dt.days
+            late_release = date_diff > 180  # 6 months = 180 days
+            mask = rdq_available & late_release
+            data = data[~mask]
         logger.info(f"After dropping very late releases: {len(data)} records")
         
         # Keep only the most recent info for each gvkey-time_avail_m combination
@@ -90,7 +90,7 @@ def c_compustatquarterly(wrds_conn=None):
             if var in data.columns:
                 data[var] = data[var].fillna(0)
         
-        # Prepare year-to-date items
+        # Prepare year-to-date items (equivalent to Stata's foreach loop)
         data = data.sort_values(['gvkey', 'fyearq', 'fqtr'])
         
         ytd_vars = ['sstky', 'prstkcy', 'oancfy', 'fopty']
@@ -100,13 +100,14 @@ def c_compustatquarterly(wrds_conn=None):
                 q_var = f'{var}q'
                 data[q_var] = np.nan
                 
-                # For Q1, use the value as is
+                # For Q1, use the value as is (equivalent to Stata's "gen `v'q = `v' if fqtr == 1")
                 mask = data['fqtr'] == 1
                 data.loc[mask, q_var] = data.loc[mask, var]
                 
-                # For other quarters, calculate quarter-over-quarter change
+                # For other quarters, calculate quarter-over-quarter change (equivalent to Stata's "by gvkey fyearq: replace `v'q = `v' - `v'[_n-1] if fqtr !=1")
                 for gvkey in data['gvkey'].unique():
-                    gvkey_data = data[data['gvkey'] == gvkey].copy()
+                    gvkey_mask = data['gvkey'] == gvkey
+                    gvkey_data = data[gvkey_mask].copy()
                     gvkey_data = gvkey_data.sort_values(['fyearq', 'fqtr'])
                     
                     for i in range(1, len(gvkey_data)):
@@ -115,30 +116,41 @@ def c_compustatquarterly(wrds_conn=None):
                             current_val = gvkey_data.iloc[i][var]
                             prev_val = gvkey_data.iloc[i-1][var]
                             
+                            # Only calculate if both values are not NaN (equivalent to Stata's behavior)
                             if pd.notna(current_val) and pd.notna(prev_val):
                                 data.loc[gvkey_data.index[i], q_var] = current_val - prev_val
                             elif pd.notna(current_val):
+                                # If only current value exists, use it as is
                                 data.loc[gvkey_data.index[i], q_var] = current_val
         
-        # Expand to monthly (3 months per quarter)
-        monthly_list = []
+        # Expand to monthly (equivalent to Stata's "expand 3")
+        # Create a temporary time_avail_m column for the expansion logic
+        data['tempTimeAvailM'] = data['time_avail_m']
+        
+        # Expand each row to 3 rows (equivalent to Stata's "expand 3")
+        expanded_data = []
         for _, row in data.iterrows():
             for i in range(3):
                 new_row = row.copy()
-                new_row['time_avail_m'] = row['time_avail_m'] + i
-                monthly_list.append(new_row)
+                if i > 0:  # For rows after the first one
+                    new_row['time_avail_m'] = row['time_avail_m'] + i
+                expanded_data.append(new_row)
         
-        data = pd.DataFrame(monthly_list)
+        data = pd.DataFrame(expanded_data)
         
         # Keep only the most recent info for each gvkey-time_avail_m combination after expanding
+        # (equivalent to Stata's "bysort gvkey time_avail_m (datadate): keep if _n == _N")
         data = data.sort_values(['gvkey', 'time_avail_m', 'datadate'])
         data = data.drop_duplicates(subset=['gvkey', 'time_avail_m'], keep='last')
         logger.info(f"After expanding to monthly: {len(data)} records")
         
-        # Rename datadate to datadateq
+        # Drop temporary column (equivalent to Stata's "drop temp*")
+        data = data.drop('tempTimeAvailM', axis=1)
+        
+        # Rename datadate to datadateq (equivalent to Stata's "rename datadate datadateq")
         data = data.rename(columns={'datadate': 'datadateq'})
         
-        # Convert gvkey to numeric
+        # Convert gvkey to numeric (equivalent to Stata's "destring gvkey, replace")
         data['gvkey'] = pd.to_numeric(data['gvkey'], errors='coerce')
         
         # Save to intermediate file
