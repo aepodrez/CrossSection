@@ -204,6 +204,7 @@ def zz2_abnormalaccruals_abnormalaccrualspercent():
         logger.info(f"AbnormalAccrualsPercent: {len(abnormalaccrualspercent_output)} observations")
         
         logger.info("Successfully completed AbnormalAccruals and AbnormalAccrualsPercent predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in AbnormalAccruals and AbnormalAccrualsPercent calculation: {str(e)}")

@@ -235,6 +235,7 @@ def zz1_intanbm_intansp_intancfp_intanep():
         logger.info(f"IntanEP: {len(intanep_output)} observations")
         
         logger.info("Successfully completed IntanBM, IntanSP, IntanCFP, IntanEP predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in IntanBM, IntanSP, IntanCFP, IntanEP calculation: {str(e)}")

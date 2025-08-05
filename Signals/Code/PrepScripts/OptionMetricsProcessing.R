@@ -17,12 +17,13 @@ library(RPostgres)
 library(tidyverse)
 library(lubridate)
 
-# heads up: this assumes (1) running on wrds server and (2) pgpass is set up following this:
-# https://wrds-www.wharton.upenn.edu/pages/support/programming-wrds/programming-r/r-from-the-web/
+# WRDS connection with password
 wrds <- dbConnect(Postgres(),
                   host='wrds-pgdata.wharton.upenn.edu',
                   port=9737,
                   dbname='wrds',
+                  user='aepodrez',
+                  password='V4Aut3QEzMpCs8b',
                   sslmode='require')
 
 

@@ -38,6 +38,9 @@ def ze_13f():
         data = pd.read_csv(input_path)
         logger.info(f"Successfully loaded {len(data)} records from 13F institutional ownership data")
         
+        # Convert column names to lowercase for consistency
+        data.columns = data.columns.str.lower()
+        
         # Display initial data info
         logger.info("Initial data info:")
         logger.info(f"  Columns: {list(data.columns)}")
@@ -61,7 +64,8 @@ def ze_13f():
         
         # Create time_d from rdate (equivalent to Stata's "gen time_d = date(rdate,"DMY")")
         if 'rdate' in data.columns:
-            data['time_d'] = pd.to_datetime(data['rdate'], format='%d/%m/%Y', errors='coerce')
+            # Parse dates in DMY format (e.g., "30SEP1986")
+            data['time_d'] = pd.to_datetime(data['rdate'], format='%d%b%Y', errors='coerce')
             logger.info("Created time_d from rdate")
         
         # Create time_avail_m (equivalent to Stata's "gen time_avail_m = mofd(time_d)")
@@ -92,9 +96,9 @@ def ze_13f():
             complete_dates = pd.date_range(
                 start=min_date.to_timestamp(),
                 end=max_date.to_timestamp(),
-                freq='ME'
+                freq='M'
             )
-            complete_dates = [pd.Period(date, freq='ME') for date in complete_dates]
+            complete_dates = [pd.Period(date, freq='M') for date in complete_dates]
             
             # Create complete time series dataframe
             complete_series = pd.DataFrame({
@@ -115,7 +119,7 @@ def ze_13f():
             # Forward fill missing values (equivalent to Stata's forward fill)
             complete_series = complete_series.sort_values('time_avail_m')
             for col in value_columns:
-                complete_series['col'] = complete_series['col'].ffill()
+                complete_series[col] = complete_series[col].ffill()
             
             # Forward fill permno
             complete_series['permno'] = complete_series['permno'].ffill()
@@ -143,11 +147,6 @@ def ze_13f():
         output_path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(output_path, index=False)
         logger.info(f"Saved 13F institutional ownership data to {output_path}")
-        
-        # Also save to main data directory for compatibility
-        main_output_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/TR_13F.csv")
-        data.to_csv(main_output_path, index=False)
-        logger.info(f"Saved to main data directory: {main_output_path}")
         
         # Log comprehensive summary statistics
         logger.info("13F institutional ownership summary:")

@@ -161,6 +161,7 @@ def zz1_zerotrade_zerotradealt1_zerotradealt12():
         logger.info(f"zerotrade12M: {len(zerotrade12m_output)} observations")
         
         logger.info("Successfully completed zerotrade1M, zerotrade6M, zerotrade12M predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in zerotrade1M, zerotrade6M, zerotrade12M calculation: {str(e)}")

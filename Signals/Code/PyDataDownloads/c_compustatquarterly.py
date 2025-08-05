@@ -65,15 +65,24 @@ def c_compustatquarterly(wrds_conn=None):
         rdq_time_avail = pd.to_datetime(data['rdq']) + pd.DateOffset(months=3)
         rdq_time_avail = rdq_time_avail.dt.to_period('M')
         # Only compare when rdq is not missing (equivalent to Stata's !mi(rdq))
+        # Fix boolean NA issue by handling NaN values properly
         rdq_earlier = rdq_time_avail > data['time_avail_m']
+        rdq_earlier = rdq_earlier.fillna(False)  # Treat NaN as False
         mask = rdq_available & rdq_earlier
         data.loc[mask, 'time_avail_m'] = rdq_time_avail[mask]
         
         # Drop cases with very late release (equivalent to Stata's "drop if mofd(rdq) - mofd(datadate) > 6 & !mi(rdq)")
         rdq_available = data['rdq'].notna()
         if rdq_available.any():
-            date_diff = (pd.to_datetime(data['rdq']) - pd.to_datetime(data['datadate'])).dt.days
+            # Only calculate date difference for rows where rdq is not missing
+            rdq_mask = data['rdq'].notna()
+            date_diff = pd.Series(index=data.index, dtype='float64')
+            date_diff[rdq_mask] = (pd.to_datetime(data.loc[rdq_mask, 'rdq']) - 
+                                  pd.to_datetime(data.loc[rdq_mask, 'datadate'])).dt.days
+            
             late_release = date_diff > 180  # 6 months = 180 days
+            late_release = late_release.fillna(False)  # Treat NaN as False
+            
             # Only apply when rdq is not missing (equivalent to Stata's !mi(rdq))
             mask = rdq_available & late_release
             data = data[~mask]
@@ -106,24 +115,18 @@ def c_compustatquarterly(wrds_conn=None):
                 mask = data['fqtr'] == 1
                 data.loc[mask, q_var] = data.loc[mask, var]
                 
-                # For other quarters, calculate quarter-over-quarter change (equivalent to Stata's "by gvkey fyearq: replace `v'q = `v' - `v'[_n-1] if fqtr !=1")
-                for gvkey in data['gvkey'].unique():
-                    gvkey_mask = data['gvkey'] == gvkey
-                    gvkey_data = data[gvkey_mask].copy()
-                    gvkey_data = gvkey_data.sort_values(['fyearq', 'fqtr'])
-                    
-                    for i in range(1, len(gvkey_data)):
-                        if gvkey_data.iloc[i]['fqtr'] != 1:  # Not Q1
-                            # Calculate change from previous quarter
-                            current_val = gvkey_data.iloc[i][var]
-                            prev_val = gvkey_data.iloc[i-1][var]
-                            
-                            # Only calculate if both values are not NaN (equivalent to Stata's behavior)
-                            if pd.notna(current_val) and pd.notna(prev_val):
-                                data.loc[gvkey_data.index[i], q_var] = current_val - prev_val
-                            elif pd.notna(current_val):
-                                # If only current value exists, use it as is
-                                data.loc[gvkey_data.index[i], q_var] = current_val
+                # For other quarters, calculate quarter-over-quarter change within same fiscal year
+                # (equivalent to Stata's "by gvkey fyearq: replace `v'q = `v' - `v'[_n-1] if fqtr !=1")
+                # Use simple lag operation within groups - much more efficient
+                data[f'{var}_lag'] = data.groupby(['gvkey', 'fyearq'])[var].shift(1)
+                
+                # Calculate differences for non-Q1 quarters where both values exist
+                non_q1_mask = data['fqtr'] != 1
+                valid_mask = non_q1_mask & data[var].notna() & data[f'{var}_lag'].notna()
+                data.loc[valid_mask, q_var] = data.loc[valid_mask, var] - data.loc[valid_mask, f'{var}_lag']
+                
+                # Drop the temporary lag column
+                data = data.drop(f'{var}_lag', axis=1)
         
         # Expand to monthly (equivalent to Stata's "expand 3")
         # Create a temporary time_avail_m column for the expansion logic
@@ -135,7 +138,11 @@ def c_compustatquarterly(wrds_conn=None):
             for i in range(3):
                 new_row = row.copy()
                 if i > 0:  # For rows after the first one
-                    new_row['time_avail_m'] = row['time_avail_m'] + i
+                    # Equivalent to Stata's "time_avail_m + _n - 1" where _n = i + 1
+                    # Convert Period to datetime, add months, then convert back to Period
+                    base_date = row['time_avail_m'].to_timestamp()
+                    new_date = base_date + pd.DateOffset(months=i)
+                    new_row['time_avail_m'] = new_date.to_period('M')
                 expanded_data.append(new_row)
         
         data = pd.DataFrame(expanded_data)

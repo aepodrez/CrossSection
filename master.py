@@ -141,56 +141,80 @@ def create_directories():
 def check_download_output_file(func_name):
     """Check what output file a download function creates"""
     # Map function names to their expected output files
+    # Check both main Data directory and Intermediate directory
     output_file_map = {
         'a_ccmlinkingtable': Path(PROJECT_PATH) / "Signals" / "Data" / "CCMLinkingTable.csv",
         'b_compustatannual': Path(PROJECT_PATH) / "Signals" / "Data" / "m_aCompustat.csv",
         'c_compustatquarterly': Path(PROJECT_PATH) / "Signals" / "Data" / "m_qCompustat.csv",
         'd_compustatpensions': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatPensions.csv",
-        'e_compustatbusinesssegments': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatBusinessSegments.csv",
-        'f_compustatcustomersegments': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatCustomerSegments.csv",
-        'g_compustatshortinterest': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatShortInterest.csv",
-        'h_crspdistributions': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPDistributions.csv",
-        'i2_crspmonthlyraw': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPMonthlyRaw.csv",
-        'i_crspmonthly': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPMonthly.csv",
-        'j_crspdaily': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPDaily.csv",
-        'k_crspacquisitions': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPAcquisitions.csv",
+        'e_compustatbusinesssegments': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatSegments.csv",
+        'f_compustatcustomersegments': Path(PROJECT_PATH) / "Signals" / "Data" / "CompustatSegmentDataCustomers.csv",
+        'g_compustatshortinterest': Path(PROJECT_PATH) / "Signals" / "Data" / "monthlyShortInterest.csv",
+        'h_crspdistributions': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPdistributions.csv",
+        'i2_crspmonthlyraw': Path(PROJECT_PATH) / "Signals" / "Data" / "monthlyCRSPraw.csv",
+        'i_crspmonthly': Path(PROJECT_PATH) / "Signals" / "Data" / "monthlyCRSP.csv",
+        'j_crspdaily': Path(PROJECT_PATH) / "Signals" / "Data" / "dailyCRSP.csv",
+        'k_crspacquisitions': Path(PROJECT_PATH) / "Signals" / "Data" / "m_CRSPAcquisitions.csv",
         'l2_ibes_eps_adj': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_EPS_Adj.csv",
         'l_ibes_eps_unadj': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_EPS_Unadj.csv",
         'm_ibes_recommendations': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_Recommendations.csv",
         'n_ibes_unadjustedactuals': Path(PROJECT_PATH) / "Signals" / "Data" / "IBES_UnadjustedActuals.csv",
-        'o_daily_fama_french': Path(PROJECT_PATH) / "Signals" / "Data" / "Daily_FamaFrench.csv",
-        'p_monthly_fama_french': Path(PROJECT_PATH) / "Signals" / "Data" / "Monthly_FamaFrench.csv",
-        'q_marketreturns': Path(PROJECT_PATH) / "Signals" / "Data" / "MarketReturns.csv",
-        'r_monthlyliquidityfactor': Path(PROJECT_PATH) / "Signals" / "Data" / "MonthlyLiquidityFactor.csv",
-        's_qfactormodel': Path(PROJECT_PATH) / "Signals" / "Data" / "QFactorModel.csv",
+        'o_daily_fama_french': Path(PROJECT_PATH) / "Signals" / "Data" / "dailyFF.csv",
+        'p_monthly_fama_french': Path(PROJECT_PATH) / "Signals" / "Data" / "monthlyFF.csv",
+        'q_marketreturns': Path(PROJECT_PATH) / "Signals" / "Data" / "monthlyMarket.csv",
+        'r_monthlyliquidityfactor': Path(PROJECT_PATH) / "Signals" / "Data" / "monthlyLiquidity.csv",
+        's_qfactormodel': Path(PROJECT_PATH) / "Signals" / "Data" / "d_qfactor.csv",
         't_vix': Path(PROJECT_PATH) / "Signals" / "Data" / "d_vix.csv",
         'u_gnpdeflator': Path(PROJECT_PATH) / "Signals" / "Data" / "GNPdefl.csv",
         'v_tbill3m': Path(PROJECT_PATH) / "Signals" / "Data" / "TBill3M.csv",
         'w_brokerdealerleverage': Path(PROJECT_PATH) / "Signals" / "Data" / "brokerLev.csv",
-        'x2_ciqcreditratings': Path(PROJECT_PATH) / "Signals" / "Data" / "CIQCreditRatings.csv",
-        'x_spcreditratings': Path(PROJECT_PATH) / "Signals" / "Data" / "SPCreditRatings.csv",
+        'x2_ciqcreditratings': Path(PROJECT_PATH) / "Signals" / "Data" / "m_CIQ_creditratings.csv",
+        'x_spcreditratings': Path(PROJECT_PATH) / "Signals" / "Data" / "m_SP_creditratings.csv",
         'za_ipodates': Path(PROJECT_PATH) / "Signals" / "Data" / "IPODates.csv",
-        'zb_pin': Path(PROJECT_PATH) / "Signals" / "Data" / "PIN.csv",
-        'zc_governanceindex': Path(PROJECT_PATH) / "Signals" / "Data" / "GovernanceIndex.csv",
-        'zd_corwinschultz': Path(PROJECT_PATH) / "Signals" / "Data" / "CorwinSchultz.csv",
-        'ze_13f': Path(PROJECT_PATH) / "Signals" / "Data" / "13F.csv",
-        'zf_crspibeslink': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPIBESLink.csv",
-        'zg_bidasktaq': Path(PROJECT_PATH) / "Signals" / "Data" / "BidAskTAQ.csv",
-        'zh_optionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "OptionMetrics.csv",
-        'zi_patentcitations': Path(PROJECT_PATH) / "Signals" / "Data" / "PatentCitations.csv",
-        'zj_inputoutputmomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "InputOutputMomentum.csv",
-        'zk_customermomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "CustomerMomentum.csv",
-        'zl_crspoptionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "CRSPOptionMetrics.csv",
+        'zb_pin': Path(PROJECT_PATH) / "Signals" / "Data" / "pin_monthly.csv",
+        'zc_governanceindex': Path(PROJECT_PATH) / "Signals" / "Data" / "GovIndex.csv",
+        'zd_corwinschultz': Path(PROJECT_PATH) / "Signals" / "Data" / "BAspreadsCorwin.csv",
+        'ze_13f': Path(PROJECT_PATH) / "Signals" / "Data" / "TR_13F.csv",
+        'zf_crspibeslink': Path(PROJECT_PATH) / "Signals" / "Data" / "IBESCRSPLinkingTable.csv",
+        'zg_bidasktaq': Path(PROJECT_PATH) / "Signals" / "Data" / "hf_spread.csv",
+        'zh_optionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "OptionMetricsVolume.csv",
+        'zi_patentcitations': Path(PROJECT_PATH) / "Signals" / "Data" / "PatentDataProcessed.csv",
+        'zj_inputoutputmomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "InputOutputMomentumProcessed.csv",
+        'zk_customermomentum': Path(PROJECT_PATH) / "Signals" / "Data" / "customerMom.csv",
+        'zl_crspoptionmetrics': Path(PROJECT_PATH) / "Signals" / "Data" / "OPTIONMETRICSCRSPLinkingTable.csv",
         'signalmastertable': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "SignalMasterTable.csv"
     }
     
-    return output_file_map.get(func_name)
+    # Check if the main output file exists
+    main_file = output_file_map.get(func_name)
+    if main_file and main_file.exists():
+        return main_file
+    
+    # For some functions, also check the Intermediate directory
+    intermediate_file_map = {
+        'e_compustatbusinesssegments': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "CompustatSegments.csv",
+        'f_compustatcustomersegments': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "CompustatSegmentDataCustomers.csv",
+        'g_compustatshortinterest': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "monthlyShortInterest.csv",
+        'h_crspdistributions': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "CRSPdistributions.csv",
+        'i2_crspmonthlyraw': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "monthlyCRSPraw.csv",
+        'i_crspmonthly': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "monthlyCRSP.csv",
+        'j_crspdaily': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "dailyCRSP.csv",
+        'k_crspacquisitions': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "m_CRSPAcquisitions.csv",
+        'ze_13f': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "TR_13F.csv",
+        'zf_crspibeslink': Path(PROJECT_PATH) / "Signals" / "Data" / "Intermediate" / "IBESCRSPLinkingTable.csv",
+    }
+    
+    intermediate_file = intermediate_file_map.get(func_name)
+    if intermediate_file and intermediate_file.exists():
+        return intermediate_file
+    
+    return main_file  # Return the expected main file path even if it doesn't exist
 
 def check_predictor_output_file(func_name):
     """Check what output file a predictor function creates"""
-    # Most predictor functions save to the main Signals/Data directory
+    # Predictor functions save to the Signals/Data/Predictors directory
     # with the function name as the filename
-    output_file = Path(PROJECT_PATH) / "Signals" / "Data" / f"{func_name}.csv"
+    output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / f"{func_name}.csv"
     return output_file
 
 # ============================================================

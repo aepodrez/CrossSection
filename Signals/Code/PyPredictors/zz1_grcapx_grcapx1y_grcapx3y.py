@@ -138,6 +138,7 @@ def zz1_grcapx_grcapx1y_grcapx3y():
         logger.info(f"grcapx3y: {len(grcapx3y_output)} observations")
         
         logger.info("Successfully completed grcapx, grcapx1y, grcapx3y predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in grcapx, grcapx1y, grcapx3y calculation: {str(e)}")

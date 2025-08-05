@@ -145,6 +145,7 @@ def zz1_residualmomentum6m_residualmomentum():
         logger.info(f"ResidualMomentum: {len(residualmomentum_output)} observations")
         
         logger.info("Successfully completed ResidualMomentum6m and ResidualMomentum predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in ResidualMomentum6m and ResidualMomentum calculation: {str(e)}")

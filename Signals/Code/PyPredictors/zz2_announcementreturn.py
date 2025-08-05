@@ -196,6 +196,7 @@ def zz2_announcementreturn():
             temp_ann_dates_path.unlink()
         
         logger.info("Successfully completed AnnouncementReturn predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in AnnouncementReturn calculation: {str(e)}")

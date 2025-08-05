@@ -38,6 +38,9 @@ def zf_crspibeslink():
         data = pd.read_csv(input_path)
         logger.info(f"Successfully loaded {len(data)} records from CRSP-IBES linking data")
         
+        # Convert column names to lowercase for consistency
+        data.columns = data.columns.str.lower()
+        
         # Display initial data info
         logger.info("Initial data info:")
         logger.info(f"  Columns: {list(data.columns)}")
@@ -53,14 +56,6 @@ def zf_crspibeslink():
             dropped_count = initial_count - filtered_count
             logger.info(f"Filtered to high-quality links (score <= 2): {filtered_count} records")
             logger.info(f"Dropped {dropped_count} low-quality links (score > 2)")
-            
-            # Score distribution analysis
-            if 'score' in data.columns:
-                score_counts = data['score'].value_counts().sort_index()
-                logger.info("Score distribution after filtering:")
-                for score, count in score_counts.items():
-                    percentage = count / len(data) * 100
-                    logger.info(f"  Score {score}: {count} links ({percentage:.1f}%)")
         else:
             logger.warning("Score column not found - no quality filtering applied")
         
@@ -98,11 +93,6 @@ def zf_crspibeslink():
         output_path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(output_path, index=False)
         logger.info(f"Saved CRSP-IBES linking table to {output_path}")
-        
-        # Also save to main data directory for compatibility
-        main_output_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/IBESCRSPLinkingTable.csv")
-        data.to_csv(main_output_path, index=False)
-        logger.info(f"Saved to main data directory: {main_output_path}")
         
         # Log comprehensive summary statistics
         logger.info("CRSP-IBES linking table summary:")
