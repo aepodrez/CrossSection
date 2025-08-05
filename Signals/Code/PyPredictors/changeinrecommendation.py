@@ -74,12 +74,13 @@ def changeinrecommendation():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        master_data = pd.read_csv(master_path, usecols=['tickerIBES', 'time_avail_m', 'permno'])
+        master_data = pd.read_csv(master_path, usecols=['ticker', 'time_avail_m', 'permno'])
         
         # Merge data
         merged_data = data.merge(
             master_data, 
-            on=['tickerIBES', 'time_avail_m'], 
+            left_on=['tickerIBES', 'time_avail_m'],
+            right_on=['ticker', 'time_avail_m'], 
             how='inner'  # equivalent to Stata's keep(match)
         )
         

@@ -66,10 +66,11 @@ def uprecomm():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        master_data = pd.read_csv(master_path, usecols=['tickerIBES', 'time_avail_m', 'permno'])
+        master_data = pd.read_csv(master_path, usecols=['ticker', 'time_avail_m', 'permno'])
         
         # Merge with SignalMasterTable (equivalent to Stata's "merge 1:m tickerIBES time_avail_m using "$pathDataIntermediate/SignalMasterTable", keep(match) nogenerate keepusing(permno)")
-        data = data.merge(master_data, on=['tickerIBES', 'time_avail_m'], how='inner')
+        # Note: We need to map tickerIBES to ticker for the merge
+        data = data.merge(master_data, left_on=['tickerIBES', 'time_avail_m'], right_on=['ticker', 'time_avail_m'], how='inner')
         logger.info(f"After merging with SignalMasterTable: {len(data)} records")
         
         # SAVE RESULTS

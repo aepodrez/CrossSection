@@ -173,7 +173,12 @@ def coskewacx():
         if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
             output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
         
-        output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
+        # Handle PeriodDtype by converting to timestamp first
+        if hasattr(output_data['time_avail_m'], 'dt'):
+            output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
+        else:
+            # For PeriodDtype, convert to timestamp first
+            output_data['yyyymm'] = output_data['time_avail_m'].dt.to_timestamp().dt.year * 100 + output_data['time_avail_m'].dt.to_timestamp().dt.month
         
         # Save CSV file
         csv_output_path = predictors_dir / "CoskewACX.csv"

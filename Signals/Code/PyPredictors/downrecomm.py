@@ -71,13 +71,14 @@ def downrecomm():
             return False
         
         # Load required variables from SignalMasterTable
-        master_vars = ['tickerIBES', 'time_avail_m', 'permno']
+        master_vars = ['ticker', 'time_avail_m', 'permno']
         master_data = pd.read_csv(master_path, usecols=master_vars)
         
         # Merge with SignalMasterTable (equivalent to Stata's "merge 1:m tickerIBES time_avail_m using "$pathDataIntermediate/SignalMasterTable", keep(match)")
         merged_data = data.merge(
             master_data,
-            on=['tickerIBES', 'time_avail_m'],
+            left_on=['tickerIBES', 'time_avail_m'],
+            right_on=['ticker', 'time_avail_m'],
             how='inner'  # keep(match)
         )
         

@@ -103,7 +103,9 @@ def equityduration():
         for _, row in data.iterrows():
             for month in range(12):
                 new_row = row.copy()
-                new_row['time_avail_m'] = row['time_avail_m'] + pd.DateOffset(months=month)
+                # Convert time_avail_m to datetime if it's not already
+                base_date = pd.to_datetime(row['time_avail_m'])
+                new_row['time_avail_m'] = base_date + pd.DateOffset(months=month)
                 monthly_data.append(new_row)
         
         data = pd.DataFrame(monthly_data)

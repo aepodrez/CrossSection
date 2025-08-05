@@ -59,6 +59,9 @@ def probinformedtrading():
         
         pin_data = pd.read_csv(pin_path)
         
+        # Convert time_avail_m to datetime before merge
+        pin_data['time_avail_m'] = pd.to_datetime(pin_data['time_avail_m'])
+        
         # Merge with PIN data
         data = data.merge(pin_data, on=['permno', 'time_avail_m'], how='left')
         logger.info(f"After merging with PIN data: {len(data)} records")

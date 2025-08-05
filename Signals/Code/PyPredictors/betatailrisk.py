@@ -78,15 +78,16 @@ def betatailrisk():
         data = pd.read_csv(monthly_crsp_path, usecols=['permno', 'time_avail_m', 'ret', 'shrcd'])
         logger.info(f"Successfully loaded {len(data)} monthly records")
         
+        # Convert time_avail_m to datetime before merge
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        monthly_tail['time_avail_m'] = pd.to_datetime(monthly_tail['time_avail_m'])
+        
         # Merge with tail risk data
         data = data.merge(monthly_tail, on='time_avail_m', how='inner')
         logger.info(f"After merge: {len(data)} records")
         
         # Sort by permno and time_avail_m
         data = data.sort_values(['permno', 'time_avail_m'])
-        
-        # Convert time_avail_m to datetime
-        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
         
         # SIGNAL CONSTRUCTION
         logger.info("Constructing BetaTailRisk signal...")

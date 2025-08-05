@@ -81,7 +81,7 @@ def frontier():
         
         # Create Fama-French 48 industry codes (simplified - would need actual mapping)
         # For now, use first 2 digits of SIC as approximation
-        data['tempFF48'] = data['sicCRSP'].astype(str).str[:2].astype(int)
+        data['tempFF48'] = pd.to_numeric(data['sicCRSP'].astype(str).str[:2], errors='coerce')
         
         # Drop missing tempFF48 (equivalent to Stata's "drop if mi(tempFF48)")
         data = data.dropna(subset=['tempFF48'])

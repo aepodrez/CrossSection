@@ -91,7 +91,7 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        data = pd.read_csv(master_path, usecols=['permno', 'tickerIBES', 'time_avail_m', 'prc'])
+        data = pd.read_csv(master_path, usecols=['permno', 'ticker', 'time_avail_m', 'prc'])
         
         # Merge with monthly CRSP data
         crsp_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/monthlyCRSP.csv")

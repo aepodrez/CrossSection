@@ -57,6 +57,10 @@ def citationsrd():
         compustat_vars = ['permno', 'time_avail_m', 'xrd', 'sich', 'datadate', 'ceq']
         compustat_data = pd.read_csv(compustat_path, usecols=compustat_vars)
         
+        # Convert time_avail_m to datetime before merge
+        master_data['time_avail_m'] = pd.to_datetime(master_data['time_avail_m'])
+        compustat_data['time_avail_m'] = pd.to_datetime(compustat_data['time_avail_m'])
+        
         # Merge with Compustat data
         merged_data = master_data.merge(
             compustat_data, 

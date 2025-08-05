@@ -103,6 +103,10 @@ def trendfactor():
         master_data = pd.read_csv(master_path, usecols=['permno', 'time_avail_m', 'ret', 'prc', 'exchcd', 'shrcd', 'mve_c'])
         logger.info(f"Successfully loaded {len(master_data)} master records")
         
+        # Ensure time_avail_m is datetime in both datasets for proper merging
+        master_data['time_avail_m'] = pd.to_datetime(master_data['time_avail_m'])
+        ma_data['time_avail_m'] = pd.to_datetime(ma_data['time_avail_m'])
+        
         # Calculate size deciles based on NYSE stocks only (equivalent to Stata's preserve/restore logic)
         nyse_data = master_data[master_data['exchcd'] == 1].copy()
         qu10_data = nyse_data.groupby('time_avail_m')['mve_c'].quantile(0.1).reset_index()
@@ -111,6 +115,9 @@ def trendfactor():
         # Save temporary quantile data
         temp_qu_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Temp/tempQU.csv")
         qu10_data.to_csv(temp_qu_path, index=False)
+        
+        # Ensure time_avail_m is datetime in quantile data for proper merging
+        qu10_data['time_avail_m'] = pd.to_datetime(qu10_data['time_avail_m'])
         
         # Merge quantile data
         master_data = master_data.merge(qu10_data, on='time_avail_m', how='left')
@@ -161,6 +168,9 @@ def trendfactor():
         # Save temporary beta data
         temp_beta_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Temp/tempBeta.csv")
         beta_data.to_csv(temp_beta_path, index=False)
+        
+        # Ensure time_avail_m is datetime in beta data for proper merging
+        beta_data['time_avail_m'] = pd.to_datetime(beta_data['time_avail_m'])
         
         # Merge beta data
         master_data = master_data.merge(beta_data, on='time_avail_m', how='left')

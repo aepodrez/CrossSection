@@ -59,6 +59,10 @@ def patentsrd():
         
         compustat_data = pd.read_csv(compustat_path, usecols=['permno', 'time_avail_m', 'gvkey', 'xrd', 'sich', 'datadate', 'ceq'])
         
+        # Convert time_avail_m to datetime before merge
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        compustat_data['time_avail_m'] = pd.to_datetime(compustat_data['time_avail_m'])
+        
         # Merge with Compustat data
         data = data.merge(compustat_data, on=['permno', 'time_avail_m'], how='left')
         logger.info(f"After merging with Compustat data: {len(data)} records")

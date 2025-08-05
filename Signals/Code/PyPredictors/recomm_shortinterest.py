@@ -55,7 +55,7 @@ def recomm_shortinterest():
         # Calculate 12-month rolling first value (equivalent to Stata's "asrol ireccd, gen(ireccd12) by(tempID) stat(first) window(time_avail_m 12) min(1)")
         ibes_data['ireccd12'] = ibes_data.groupby('tempID').rolling(
             window=12, min_periods=1
-        )['ireccd'].first().reset_index(0, drop=True)
+        )['ireccd'].apply(lambda x: x.iloc[0] if len(x) > 0 else np.nan).reset_index(0, drop=True)
         
         # Collapse to firm-month (equivalent to Stata's "gcollapse (mean) ireccd12, by(tickerIBES time_avail_m)")
         ibes_data = ibes_data.groupby(['tickerIBES', 'time_avail_m'])['ireccd12'].mean().reset_index()
@@ -79,12 +79,12 @@ def recomm_shortinterest():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        master_data = pd.read_csv(master_path, usecols=['permno', 'gvkey', 'tickerIBES', 'time_avail_m', 'bh1m'])
+        master_data = pd.read_csv(master_path, usecols=['permno', 'gvkey', 'ticker', 'time_avail_m', 'bh1m'])
         logger.info(f"Successfully loaded {len(master_data)} master records")
         
-        # Drop if gvkey or tickerIBES is missing (equivalent to Stata's "drop if mi(gvkey) | mi(tickerIBES)")
-        master_data = master_data.dropna(subset=['gvkey', 'tickerIBES'])
-        logger.info(f"After dropping missing gvkey or tickerIBES: {len(master_data)} records")
+        # Drop if gvkey or ticker is missing (equivalent to Stata's "drop if mi(gvkey) | mi(tickerIBES)")
+        master_data = master_data.dropna(subset=['gvkey', 'ticker'])
+        logger.info(f"After dropping missing gvkey or ticker: {len(master_data)} records")
         
         # Load monthly CRSP data
         crsp_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/monthlyCRSP.csv")
@@ -119,7 +119,7 @@ def recomm_shortinterest():
         logger.info(f"After merging with short interest data: {len(data)} records")
         
         # Merge with temporary recommendations data
-        data = data.merge(ibes_data, on=['tickerIBES', 'time_avail_m'], how='inner')
+        data = data.merge(ibes_data, left_on=['ticker', 'time_avail_m'], right_on=['tickerIBES', 'time_avail_m'], how='inner')
         logger.info(f"After merging with recommendations data: {len(data)} records")
         
         # SIGNAL CONSTRUCTION

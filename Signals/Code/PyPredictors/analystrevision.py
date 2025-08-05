@@ -47,7 +47,7 @@ def analystrevision():
             logger.error(f"SignalMasterTable not found: {signal_master_path}")
             return False
         
-        data = pd.read_csv(signal_master_path, usecols=['permno', 'tickerIBES', 'time_avail_m'])
+        data = pd.read_csv(signal_master_path, usecols=['permno', 'ticker', 'time_avail_m'])
         logger.info(f"Successfully loaded {len(data)} records")
         
         # Merge with IBES data (equivalent to Stata's "merge m:1 tickerIBES time_avail_m using temp")

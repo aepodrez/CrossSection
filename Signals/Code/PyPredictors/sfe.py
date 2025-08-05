@@ -71,7 +71,7 @@ def sfe():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        master_data = pd.read_csv(master_path, usecols=['permno', 'time_avail_m', 'tickerIBES', 'prc', 'mve_c'])
+        master_data = pd.read_csv(master_path, usecols=['permno', 'time_avail_m', 'ticker', 'prc', 'mve_c'])
         logger.info(f"Successfully loaded {len(master_data)} master records")
         
         # Rename time_avail_m to prc_time for merge (equivalent to Stata's "rename time_avail_m prc_time")

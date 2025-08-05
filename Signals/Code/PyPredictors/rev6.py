@@ -74,7 +74,7 @@ def rev6():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        master_data = pd.read_csv(master_path, usecols=['permno', 'tickerIBES', 'time_avail_m', 'prc'])
+        master_data = pd.read_csv(master_path, usecols=['permno', 'ticker', 'time_avail_m', 'prc'])
         logger.info(f"Successfully loaded {len(master_data)} master records")
         
         # Merge with temporary IBES data

@@ -77,6 +77,10 @@ def divseason():
         data = pd.read_csv(master_path, usecols=master_vars)
         logger.info(f"Successfully loaded {len(data)} records from SignalMasterTable")
         
+        # Convert time_avail_m to datetime before merge
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        div_summary['time_avail_m'] = pd.to_datetime(div_summary['time_avail_m'])
+        
         # Merge with dividend data (equivalent to Stata's "merge 1:1 permno time_avail_m using "$pathtemp/tempdivamt", keep(master match)")
         merged_data = data.merge(
             div_summary[['permno', 'time_avail_m', 'cd3', 'divamt']],

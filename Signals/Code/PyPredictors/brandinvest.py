@@ -111,7 +111,9 @@ def brandinvest():
         for _, row in data.iterrows():
             for month in range(12):
                 new_row = row.copy()
-                new_row['time_avail_m'] = row['time_avail_m'] + month
+                # Convert time_avail_m to datetime and add months
+                base_date = pd.to_datetime(row['time_avail_m'])
+                new_row['time_avail_m'] = base_date + pd.DateOffset(months=month)
                 expanded_data.append(new_row)
         
         data = pd.DataFrame(expanded_data)

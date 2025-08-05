@@ -71,7 +71,7 @@ def chforecastaccrual():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        master_data = pd.read_csv(master_path, usecols=['permno', 'time_avail_m', 'tickerIBES'])
+        master_data = pd.read_csv(master_path, usecols=['permno', 'time_avail_m', 'ticker'])
         
         # Merge data
         merged_data = data.merge(
