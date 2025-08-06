@@ -349,71 +349,24 @@ def optimize_data_types(data):
     return data
 
 def log_optionmetrics_summary(data, dataset_name):
-    """Log comprehensive summary statistics for OptionMetrics data"""
-    logger.info(f"{dataset_name} summary:")
-    logger.info(f"  Total records: {len(data)}")
+    """Log summary statistics for OptionMetrics data"""
+    logger.info(f"{dataset_name} summary: {len(data)} records")
     
     # Time range analysis
     if 'time_avail_m' in data.columns:
         min_date = data['time_avail_m'].min()
         max_date = data['time_avail_m'].max()
         logger.info(f"  Time range: {min_date} to {max_date}")
-        
-        # Monthly frequency analysis
-        monthly_counts = data['time_avail_m'].value_counts().sort_index()
-        logger.info(f"  Monthly observations range: {monthly_counts.min()} to {monthly_counts.max()}")
-        logger.info(f"  Average monthly observations: {monthly_counts.mean():.1f}")
     
     # Security analysis
     if 'secid' in data.columns:
         unique_securities = data['secid'].nunique()
-        logger.info(f"  Unique securities (secid): {unique_securities}")
-        
-        # Securities with most observations
-        security_counts = data['secid'].value_counts().head(10)
-        logger.info(f"  Securities with most observations:")
-        for secid, count in security_counts.items():
-            logger.info(f"    {secid}: {count} observations")
+        logger.info(f"  Unique securities: {unique_securities}")
     
-    # Options-specific analysis
-    if 'cp_flag' in data.columns:
-        cp_counts = data['cp_flag'].value_counts()
-        logger.info("  Call/Put flag distribution:")
-        for flag, count in cp_counts.items():
-            percentage = count / len(data) * 100
-            flag_name = "Call" if flag == 'C' else "Put" if flag == 'P' else str(flag)
-            logger.info(f"    {flag_name}: {count} ({percentage:.1f}%)")
-    
-    if 'delta' in data.columns:
-        delta_data = data['delta'].dropna()
-        if len(delta_data) > 0:
-            logger.info("  Delta analysis:")
-            logger.info(f"    Mean delta: {delta_data.mean():.3f}")
-            logger.info(f"    Median delta: {delta_data.median():.3f}")
-            logger.info(f"    Range: [{delta_data.min():.3f}, {delta_data.max():.3f}]")
-    
-    if 'days' in data.columns:
-        days_data = data['days'].dropna()
-        if len(days_data) > 0:
-            logger.info("  Days to expiration analysis:")
-            logger.info(f"    Mean days: {days_data.mean():.1f}")
-            logger.info(f"    Median days: {days_data.median():.1f}")
-            logger.info(f"    Range: [{days_data.min():.0f}, {days_data.max():.0f}]")
-    
-    # Data quality checks
-    logger.info("  Data quality checks:")
-    
-    # Check for missing values
-    missing_analysis = data.isnull().sum()
-    logger.info("    Missing values per column:")
-    for column, missing_count in missing_analysis.items():
-        percentage = missing_count / len(data) * 100
-        logger.info(f"      {column}: {missing_count} ({percentage:.1f}%)")
-    
-    # Check for duplicate records
-    if 'secid' in data.columns and 'time_avail_m' in data.columns:
-        duplicates = data.duplicated(subset=['secid', 'time_avail_m']).sum()
-        logger.info(f"    Duplicate secid-time_avail_m combinations: {duplicates}")
+    # Basic data quality check
+    missing_count = data.isnull().sum().sum()
+    if missing_count > 0:
+        logger.info(f"  Missing values: {missing_count}")
 
 if __name__ == "__main__":
     # Set up logging
