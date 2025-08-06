@@ -173,6 +173,9 @@ def ms():
         # Fix tempMS at most recent data release for entire year
         # This is a complex timing adjustment that matches OP's approach
         data['month_avail'] = data['time_avail_m'].dt.month
+        
+        # Convert datadate to datetime for proper month extraction
+        data['datadate'] = pd.to_datetime(data['datadate'])
         data['month_date'] = (data['datadate'].dt.month + 6) % 12
         data.loc[data['month_avail'] != data['month_date'], 'tempMS'] = np.nan
         

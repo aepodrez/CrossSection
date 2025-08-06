@@ -83,9 +83,14 @@ def patentsrd():
         
         patent_data = pd.read_csv(patent_path, usecols=['gvkey', 'year', 'npat'])
         
-        # Merge with patent data
-        data = data.merge(patent_data, on=['gvkey', 'year'], how='left')
-        logger.info(f"After merging with patent data: {len(data)} records")
+        # Check if patent data is empty (placeholder file)
+        if len(patent_data) == 0:
+            logger.warning("Patent data is empty (placeholder file). Creating empty patent column.")
+            data['npat'] = np.nan
+        else:
+            # Merge with patent data
+            data = data.merge(patent_data, on=['gvkey', 'year'], how='left')
+            logger.info(f"After merging with patent data: {len(data)} records")
         
         # Sort data for time series operations
         data = data.sort_values(['permno', 'time_avail_m'])

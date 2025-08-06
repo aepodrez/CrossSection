@@ -90,6 +90,9 @@ def frontier():
         # Initialize logmefit_NS
         data['logmefit_NS'] = np.nan
         
+        # Convert time_avail_m to datetime for proper date arithmetic
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        
         # Get unique time periods
         time_periods = sorted(data['time_avail_m'].unique())
         

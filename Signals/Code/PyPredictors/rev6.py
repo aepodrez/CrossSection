@@ -74,8 +74,22 @@ def rev6():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        master_data = pd.read_csv(master_path, usecols=['permno', 'ticker', 'time_avail_m', 'prc'])
-        logger.info(f"Successfully loaded {len(master_data)} master records")
+        # Load the linking table to get tickerIBES for each permno
+        linking_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/IBESCRSPLinkingTable.csv")
+        
+        logger.info(f"Loading IBES-CRSP linking table from: {linking_path}")
+        
+        if not linking_path.exists():
+            logger.error(f"IBES-CRSP linking table not found: {linking_path}")
+            return False
+        
+        linking_data = pd.read_csv(linking_path)
+        logger.info(f"Loaded linking table with {len(linking_data)} records")
+        
+        # Load SignalMasterTable and merge with linking table to get tickerIBES
+        master_data = pd.read_csv(master_path, usecols=['permno', 'time_avail_m', 'prc'])
+        master_data = master_data.merge(linking_data, on='permno', how='inner')
+        logger.info(f"After merging with linking table: {len(master_data)} records")
         
         # Merge with temporary IBES data
         data = master_data.merge(ibes_data[['tickerIBES', 'time_avail_m', 'meanest']], 

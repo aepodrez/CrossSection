@@ -42,7 +42,7 @@ def betatailrisk():
         if not pd.api.types.is_datetime64_any_dtype(daily_data['time_d']):
             daily_data['time_d'] = pd.to_datetime(daily_data['time_d'])
         
-        daily_data['time_avail_m'] = daily_data['time_d'].dt.to_period('M')
+        daily_data['time_avail_m'] = daily_data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Calculate 5th percentile returns by month (equivalent to Stata's "gcollapse (p5) ret, by(time_avail_m)")
         logger.info("Calculating monthly 5th percentile returns...")

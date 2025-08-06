@@ -22,8 +22,7 @@ def analystrevision():
     logger.info("Constructing predictor signal: AnalystRevision...")
     
     try:
-        # DATA LOAD
-        # Load IBES EPS Unadjusted data
+        # Prep IBES data (equivalent to Stata's "use IBES_EPS_Unadj, replace; keep if fpi == '1'")
         ibes_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/IBES_EPS_Unadj.csv")
         
         logger.info(f"Loading IBES EPS Unadjusted data from: {ibes_path}")
@@ -32,13 +31,13 @@ def analystrevision():
             logger.error(f"IBES EPS Unadjusted data not found: {ibes_path}")
             return False
         
-        # Load and filter IBES data (equivalent to Stata's "use IBES_EPS_Unadj, replace; keep if fpi == '1'")
+        # Load and filter IBES data (equivalent to Stata's "keep if fpi == 1; keep tickerIBES time_avail_m meanest")
         ibes_data = pd.read_csv(ibes_path)
-        ibes_data = ibes_data[ibes_data['fpi'] == '1'].copy()
+        ibes_data = ibes_data[ibes_data['fpi'] == 1].copy()
         ibes_data = ibes_data[['tickerIBES', 'time_avail_m', 'meanest']].copy()
         logger.info(f"Successfully loaded and filtered IBES data: {len(ibes_data)} records")
         
-        # Load SignalMasterTable
+        # DATA LOAD (equivalent to Stata's "use permno tickerIBES time_avail_m using SignalMasterTable, clear")
         signal_master_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/SignalMasterTable.csv")
         
         logger.info(f"Loading SignalMasterTable from: {signal_master_path}")
@@ -47,12 +46,26 @@ def analystrevision():
             logger.error(f"SignalMasterTable not found: {signal_master_path}")
             return False
         
-        data = pd.read_csv(signal_master_path, usecols=['permno', 'ticker', 'time_avail_m'])
-        logger.info(f"Successfully loaded {len(data)} records")
+        # Load the linking table to get tickerIBES for each permno
+        linking_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/IBESCRSPLinkingTable.csv")
+        
+        logger.info(f"Loading IBES-CRSP linking table from: {linking_path}")
+        
+        if not linking_path.exists():
+            logger.error(f"IBES-CRSP linking table not found: {linking_path}")
+            return False
+        
+        linking_data = pd.read_csv(linking_path)
+        logger.info(f"Loaded linking table with {len(linking_data)} records")
+        
+        # Load SignalMasterTable and merge with linking table to get tickerIBES
+        data = pd.read_csv(signal_master_path, usecols=['permno', 'time_avail_m'])
+        data = data.merge(linking_data, on='permno', how='inner')
+        logger.info(f"After merging with linking table: {len(data)} records")
         
         # Merge with IBES data (equivalent to Stata's "merge m:1 tickerIBES time_avail_m using temp")
         data = data.merge(ibes_data, on=['tickerIBES', 'time_avail_m'], how='inner')
-        logger.info(f"After merge: {len(data)} records")
+        logger.info(f"After merge with IBES data: {len(data)} records")
         
         # Sort by permno and time_avail_m for lag calculations
         data = data.sort_values(['permno', 'time_avail_m'])
@@ -60,7 +73,7 @@ def analystrevision():
         # Convert time_avail_m to datetime for proper lagging
         data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
         
-        # SIGNAL CONSTRUCTION
+        # SIGNAL CONSTRUCTION (equivalent to Stata's "xtset permno time_avail_m; gen AnalystRevision = meanest/l.meanest")
         logger.info("Constructing AnalystRevision signal...")
         
         # Calculate lagged meanest (equivalent to Stata's "gen AnalystRevision = meanest/l.meanest")

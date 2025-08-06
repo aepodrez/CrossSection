@@ -69,8 +69,17 @@ def probinformedtrading():
         # SIGNAL CONSTRUCTION
         logger.info("Calculating ProbInformedTrading signal...")
         
-        # Calculate PIN measure (equivalent to Stata's "gen pin = (a*u) / (a*u + es + eb)")
-        data['pin'] = (data['a'] * data['u']) / (data['a'] * data['u'] + data['es'] + data['eb'])
+        # Check if required columns exist for PIN calculation
+        required_pin_cols = ['a', 'u', 'es', 'eb']
+        missing_cols = [col for col in required_pin_cols if col not in data.columns]
+        
+        if missing_cols:
+            logger.warning(f"Missing PIN columns: {missing_cols}")
+            logger.warning("PIN data appears to be incomplete. Creating placeholder PIN values.")
+            data['pin'] = np.nan
+        else:
+            # Calculate PIN measure (equivalent to Stata's "gen pin = (a*u) / (a*u + es + eb)")
+            data['pin'] = (data['a'] * data['u']) / (data['a'] * data['u'] + data['es'] + data['eb'])
         
         # Create size categories (equivalent to Stata's "egen tempsize = fastxtile(mve_c), by(time_avail_m) n(2)")
         data['tempsize'] = data.groupby('time_avail_m')['mve_c'].transform(

@@ -53,11 +53,23 @@ def feps():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        # Load the required variables
-        required_vars = ['permno', 'tickerIBES', 'time_avail_m']
+        # Load the linking table to get tickerIBES for each permno
+        linking_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/IBESCRSPLinkingTable.csv")
         
+        logger.info(f"Loading IBES-CRSP linking table from: {linking_path}")
+        
+        if not linking_path.exists():
+            logger.error(f"IBES-CRSP linking table not found: {linking_path}")
+            return False
+        
+        linking_data = pd.read_csv(linking_path)
+        logger.info(f"Loaded linking table with {len(linking_data)} records")
+        
+        # Load SignalMasterTable and merge with linking table to get tickerIBES
+        required_vars = ['permno', 'time_avail_m']
         data = pd.read_csv(master_path, usecols=required_vars)
-        logger.info(f"Successfully loaded {len(data)} records")
+        data = data.merge(linking_data, on='permno', how='inner')
+        logger.info(f"After merging with linking table: {len(data)} records")
         
         # Merge with prepared IBES data (equivalent to Stata's "merge m:1 tickerIBES time_avail_m using "$pathtemp/temp", keep(master match) nogenerate")
         data = data.merge(

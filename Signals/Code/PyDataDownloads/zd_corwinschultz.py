@@ -45,6 +45,11 @@ def zd_corwinschultz():
         logger.info(f"  Sample data:")
         logger.info(data.head().to_string())
         
+        # Rename columns to match expected format
+        if 'PERMNO' in data.columns:
+            data = data.rename(columns={'PERMNO': 'permno'})
+            logger.info("Renamed PERMNO to permno")
+        
         # Convert month to string (equivalent to Stata's "tostring month, replace")
         if 'month' in data.columns:
             data['month'] = data['month'].astype(str)
@@ -68,7 +73,14 @@ def zd_corwinschultz():
         # Create time_avail_m (equivalent to Stata's "gen time_avail_m = ym(y, m)")
         if 'y' in data.columns and 'm' in data.columns:
             # Create datetime and convert to period
-            data['time_avail_m'] = pd.to_datetime(data[['y', 'm']].assign(day=1)).dt.to_period('M')
+            data['day'] = 1
+            logger.info(f"Columns before datetime creation: {list(data.columns)}")
+            logger.info(f"Sample y values: {data['y'].head()}")
+            logger.info(f"Sample m values: {data['m'].head()}")
+            # Rename columns to what pandas expects
+            data_temp = data[['y', 'm', 'day']].copy()
+            data_temp.columns = ['year', 'month', 'day']
+            data['time_avail_m'] = pd.to_datetime(data_temp).dt.to_period('M')
             logger.info("Created time_avail_m column")
         
         # Drop temporary columns (equivalent to Stata's "drop y m month")
