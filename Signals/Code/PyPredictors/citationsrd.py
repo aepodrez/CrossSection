@@ -127,20 +127,40 @@ def citationsrd():
         
         # Filter: drop first 2 observations per gvkey, exclude financials, exclude negative equity
         merged_data = merged_data.sort_values(['gvkey', 'time_avail_m'])
-        merged_data = merged_data.groupby('gvkey').tail(-2)  # Drop first 2 observations
+        # Drop first 2 observations per gvkey using cumcount
+        merged_data['obs_count'] = merged_data.groupby('gvkey').cumcount()
+        merged_data = merged_data[merged_data['obs_count'] >= 2]
+        merged_data = merged_data.drop('obs_count', axis=1)
         merged_data = merged_data[~((merged_data['sicCRSP'] >= 6000) & (merged_data['sicCRSP'] <= 6999))]  # Exclude financials
         merged_data = merged_data[merged_data['ceq'] >= 0]  # Exclude negative equity
         
         # Create size categories (equivalent to Stata's astile)
-        merged_data['sizecat'] = merged_data.groupby('time_avail_m').apply(
-            lambda x: pd.qcut(x[x['exchcd'] == 1]['mve_c'], q=2, labels=False, duplicates='drop') + 1
-            if len(x[x['exchcd'] == 1]) > 0 else np.nan
-        ).reset_index(0, drop=True)
+        merged_data['sizecat'] = np.nan
+        for time_period in merged_data['time_avail_m'].unique():
+            period_data = merged_data[merged_data['time_avail_m'] == time_period]
+            nyse_data = period_data[period_data['exchcd'] == 1]
+            
+            if len(nyse_data) > 1:  # Need at least 2 observations for qcut
+                try:
+                    size_cats = pd.qcut(nyse_data['mve_c'], q=2, labels=False, duplicates='drop') + 1
+                    merged_data.loc[nyse_data.index, 'sizecat'] = size_cats
+                except:
+                    # If qcut fails, assign NaN
+                    merged_data.loc[nyse_data.index, 'sizecat'] = np.nan
         
         # Create main categories (equivalent to Stata's fastxtile)
-        merged_data['maincat'] = merged_data.groupby('time_avail_m')['tempCitationsRD'].transform(
-            lambda x: pd.qcut(x, q=3, labels=False, duplicates='drop') + 1
-        )
+        merged_data['maincat'] = np.nan
+        for time_period in merged_data['time_avail_m'].unique():
+            period_data = merged_data[merged_data['time_avail_m'] == time_period]
+            valid_data = period_data.dropna(subset=['tempCitationsRD'])
+            
+            if len(valid_data) > 2:  # Need at least 3 observations for qcut with q=3
+                try:
+                    main_cats = pd.qcut(valid_data['tempCitationsRD'], q=3, labels=False, duplicates='drop') + 1
+                    merged_data.loc[valid_data.index, 'maincat'] = main_cats
+                except:
+                    # If qcut fails, assign NaN
+                    merged_data.loc[valid_data.index, 'maincat'] = np.nan
         
         # Calculate CitationsRD (equivalent to Stata's binary logic)
         merged_data['CitationsRD'] = np.nan

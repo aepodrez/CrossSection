@@ -38,8 +38,32 @@ def zz1_optionvolume1_optionvolume2():
     try:
         # DATA LOAD
         logger.info("Loading SignalMasterTable data")
-        required_vars = ['permno', 'time_avail_m', 'secid', 'prc', 'shrcd']
+        required_vars = ['permno', 'time_avail_m', 'prc', 'shrcd', 'secid']
         data = pd.read_csv(master_path, usecols=required_vars)
+        
+        # Check if secid column exists in SignalMasterTable
+        if 'secid' not in data.columns:
+            logger.warning("secid column not found in SignalMasterTable")
+            logger.warning("This requires the CRSP-OptionMetrics linking table which depends on oclink.csv from WRDS")
+            logger.warning("Creating placeholder files for OptionVolume1 and OptionVolume2")
+            
+            # Create placeholder files
+            placeholder_data = pd.DataFrame({
+                'permno': [],
+                'yyyymm': [],
+                'OptionVolume1': []
+            })
+            placeholder_data.to_csv(output_path / "OptionVolume1.csv", index=False)
+            
+            placeholder_data2 = pd.DataFrame({
+                'permno': [],
+                'yyyymm': [],
+                'OptionVolume2': []
+            })
+            placeholder_data2.to_csv(output_path / "OptionVolume2.csv", index=False)
+            
+            logger.info("Created placeholder files for OptionVolume1 and OptionVolume2")
+            return True
         
         # Add stock volume
         logger.info("Merging with monthly CRSP for stock volume")
@@ -56,7 +80,7 @@ def zz1_optionvolume1_optionvolume2():
         
         # Add option volume
         logger.info("Merging with OptionMetrics for option volume")
-        option_data = pd.read_csv(optionmetrics_path, usecols=['secid', 'time_avail_m', 'optvolume'])
+        option_data = pd.read_csv(optionmetrics_path, usecols=['secid', 'time_avail_m', 'optVolume'])
         data = data.merge(option_data, on=['secid', 'time_avail_m'], how='inner')
         
         # Append back the missing secid observations
@@ -75,10 +99,10 @@ def zz1_optionvolume1_optionvolume2():
         logger.info("Calculating option volume measures")
         
         # Calculate OptionVolume1 (option volume / stock volume)
-        data['OptionVolume1'] = data['optvolume'] / data['vol']
+        data['OptionVolume1'] = data['optVolume'] / data['vol']
         
         # Set OptionVolume1 to missing if lagged values are missing
-        data['optvolume_lag1'] = data.groupby('permno')['optvolume'].shift(1)
+        data['optvolume_lag1'] = data.groupby('permno')['optVolume'].shift(1)
         data['vol_lag1'] = data.groupby('permno')['vol'].shift(1)
         data.loc[(data['optvolume_lag1'].isna()) | (data['vol_lag1'].isna()), 'OptionVolume1'] = np.nan
         
@@ -121,13 +145,13 @@ def zz1_optionvolume1_optionvolume2():
         logger.info("Saving results")
         
         # Save OptionVolume1
-        optionvolume1_file = output_path / "OptionVolume1.csv"
+        optionvolume1_file = output_path / "optionvolume1.csv"
         optionvolume1_output.to_csv(optionvolume1_file, index=False)
         logger.info(f"Saved OptionVolume1 predictor to {optionvolume1_file}")
         logger.info(f"OptionVolume1: {len(optionvolume1_output)} observations")
         
         # Save OptionVolume2
-        optionvolume2_file = output_path / "OptionVolume2.csv"
+        optionvolume2_file = output_path / "optionvolume2.csv"
         optionvolume2_output.to_csv(optionvolume2_file, index=False)
         logger.info(f"Saved OptionVolume2 predictor to {optionvolume2_file}")
         logger.info(f"OptionVolume2: {len(optionvolume2_output)} observations")
@@ -143,4 +167,4 @@ def zz1_optionvolume1_optionvolume2():
         raise
 
 if __name__ == "__main__":
-    main()
+    zz1_optionvolume1_optionvolume2()

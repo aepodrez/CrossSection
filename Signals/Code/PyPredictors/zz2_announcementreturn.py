@@ -184,7 +184,7 @@ def zz2_announcementreturn():
         logger.info("Saving results")
         
         # Save AnnouncementReturn
-        announcementreturn_file = output_path / "AnnouncementReturn.csv"
+        announcementreturn_file = output_path / "announcementreturn.csv"
         announcementreturn_output.to_csv(announcementreturn_file, index=False)
         logger.info(f"Saved AnnouncementReturn predictor to {announcementreturn_file}")
         logger.info(f"AnnouncementReturn: {len(announcementreturn_output)} observations")

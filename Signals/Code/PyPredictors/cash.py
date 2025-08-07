@@ -51,16 +51,19 @@ def cash():
         
         # Define time_avail_m from rdq (equivalent to Stata's "gen time_avail_m = mofd(rdq)")
         data['rdq'] = pd.to_datetime(data['rdq'])
-        data['time_avail_m'] = data['rdq'].dt.to_period('M')
+        data['time_avail_m'] = data['rdq'].dt.to_period('M').astype(str)
         
         # Expand back to monthly (equivalent to Stata's expand logic)
         logger.info("Expanding quarterly data to monthly...")
         
         expanded_data = []
         for _, row in data.iterrows():
+            # Convert string back to datetime for manipulation
+            period = pd.Period(row['time_avail_m'])
             for i in range(3):
                 new_row = row.copy()
-                new_row['time_avail_m'] = row['time_avail_m'] + i
+                new_period = period + i
+                new_row['time_avail_m'] = str(new_period)
                 expanded_data.append(new_row)
         
         data = pd.DataFrame(expanded_data)
@@ -128,7 +131,7 @@ def cash():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "Cash.csv"
+        csv_output_path = predictors_dir / "cash.csv"
         csv_data = output_data[['permno', 'yyyymm', 'Cash']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved Cash predictor to: {csv_output_path}")

@@ -192,13 +192,13 @@ def zz2_abnormalaccruals_abnormalaccrualspercent():
         logger.info("Saving results")
         
         # Save AbnormalAccruals (predictor)
-        abnormalaccruals_file = output_path / "AbnormalAccruals.csv"
+        abnormalaccruals_file = output_path / "abnormalaccruals.csv"
         abnormalaccruals_output.to_csv(abnormalaccruals_file, index=False)
         logger.info(f"Saved AbnormalAccruals predictor to {abnormalaccruals_file}")
         logger.info(f"AbnormalAccruals: {len(abnormalaccruals_output)} observations")
         
         # Save AbnormalAccrualsPercent (placebo)
-        abnormalaccrualspercent_file = output_path / "AbnormalAccrualsPercent.csv"
+        abnormalaccrualspercent_file = output_path / "abnormalaccrualspercent.csv"
         abnormalaccrualspercent_output.to_csv(abnormalaccrualspercent_file, index=False)
         logger.info(f"Saved AbnormalAccrualsPercent placebo to {abnormalaccrualspercent_file}")
         logger.info(f"AbnormalAccrualsPercent: {len(abnormalaccrualspercent_output)} observations")

@@ -47,33 +47,29 @@ def skew1():
         data = data.dropna(subset=['secid'])
         logger.info(f"After dropping missing secid: {len(data)} records")
         
-        # Load OptionMetricsXZZ data
-        optionmetrics_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/OptionMetricsXZZ.csv")
+        # Load OptionMetricsVolSurf data (contains Skew1)
+        optionmetrics_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/OptionMetricsVolSurf.csv")
         
-        logger.info(f"Loading OptionMetricsXZZ data from: {optionmetrics_path}")
+        logger.info(f"Loading OptionMetricsVolSurf data from: {optionmetrics_path}")
         
         if not optionmetrics_path.exists():
-            logger.error(f"OptionMetricsXZZ not found: {optionmetrics_path}")
-            logger.error("Please run the OptionMetricsXZZ data creation script first")
+            logger.error(f"OptionMetricsVolSurf not found: {optionmetrics_path}")
+            logger.error("Please run the OptionMetrics data creation script first")
             return False
         
-        optionmetrics_data = pd.read_csv(optionmetrics_path)
+        optionmetrics_data = pd.read_csv(optionmetrics_path, usecols=['secid', 'time_avail_m', 'Skew1'])
         
-        # Merge with OptionMetricsXZZ data (equivalent to Stata's "merge m:1 secid time_avail_m using "$pathDataIntermediate/OptionMetricsXZZ", keep(master match) nogenerate")
+        # Merge with OptionMetricsVolSurf data (equivalent to Stata's "merge m:1 secid time_avail_m using "$pathDataIntermediate/OptionMetricsXZZ", keep(master match) nogenerate")
         data = data.merge(optionmetrics_data, on=['secid', 'time_avail_m'], how='inner')
-        logger.info(f"After merging with OptionMetricsXZZ data: {len(data)} records")
+        logger.info(f"After merging with OptionMetricsVolSurf data: {len(data)} records")
         
         # Append back the missing secid data (equivalent to Stata's "append using "$pathtemp/temp"")
+        missing_secid_data['Skew1'] = np.nan  # Add Skew1 column with NaN values
         data = pd.concat([data, missing_secid_data], ignore_index=True)
         logger.info(f"After appending missing secid data: {len(data)} records")
         
-        # SIGNAL CONSTRUCTION
-        logger.info("Note: skew1 construction is done in R1_OptionMetrics.R")
-        logger.info("This Python script loads and merges the data, but the actual skew1 calculation")
-        logger.info("should be performed in the R script as indicated in the original Stata code.")
-        
-        # The actual skew1 calculation is done in R1_OptionMetrics.R
-        # This script just loads and merges the data
+        # Rename Skew1 to skew1 to match expected column name
+        data = data.rename(columns={'Skew1': 'skew1'})
         
         logger.info("Successfully prepared data for skew1 calculation")
         

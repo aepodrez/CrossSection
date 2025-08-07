@@ -35,7 +35,7 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         
         # Filter for FROE1 (equivalent to Stata's "keep if fpi == "1" & month(statpers) == 5")
         froe1_data = ibes_data[
-            (ibes_data['fpi'] == "1") & 
+            (ibes_data['fpi'] == 1) & 
             (pd.to_datetime(ibes_data['statpers']).dt.month == 5)
         ].copy()
         
@@ -51,6 +51,8 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         froe1_data['time_avail_m'] = pd.to_datetime(froe1_data['time_avail_m']) + pd.DateOffset(months=1)
         froe1_data = froe1_data.rename(columns={'meanest': 'feps1'})
         froe1_data = froe1_data[['tickerIBES', 'time_avail_m', 'feps1']]
+        # Ensure time_avail_m is datetime for consistent merging
+        froe1_data['time_avail_m'] = pd.to_datetime(froe1_data['time_avail_m'])
         
         # Save temporary FROE1 data
         temp_froe_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Temp/tempFROE.csv")
@@ -60,13 +62,15 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         # Prep IBES FROE2
         logger.info("Preparing IBES FROE2 data...")
         froe2_data = ibes_data[
-            (ibes_data['fpi'] == "2") & 
+            (ibes_data['fpi'] == 2) & 
             (pd.to_datetime(ibes_data['statpers']).dt.month == 5)
         ].copy()
         
         froe2_data['time_avail_m'] = pd.to_datetime(froe2_data['time_avail_m']) + pd.DateOffset(months=1)
         froe2_data = froe2_data.rename(columns={'meanest': 'feps2'})
         froe2_data = froe2_data[['tickerIBES', 'time_avail_m', 'feps2']]
+        # Ensure time_avail_m is datetime for consistent merging
+        froe2_data['time_avail_m'] = pd.to_datetime(froe2_data['time_avail_m'])
         
         # Save temporary FROE2 data
         temp_froe2_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Temp/tempFROE2.csv")
@@ -74,9 +78,11 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         
         # Prep IBES LTG
         logger.info("Preparing IBES LTG data...")
-        ltg_data = ibes_data[ibes_data['fpi'] == "0"].copy()
+        ltg_data = ibes_data[ibes_data['fpi'] == 0].copy()
         ltg_data = ltg_data.rename(columns={'meanest': 'LTG'})
         ltg_data = ltg_data[['tickerIBES', 'time_avail_m', 'LTG']]
+        # Ensure time_avail_m is datetime for consistent merging
+        ltg_data['time_avail_m'] = pd.to_datetime(ltg_data['time_avail_m'])
         
         # Save temporary LTG data
         temp_ltg_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Temp/tempLTG.csv")
@@ -91,7 +97,7 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
             logger.error("Please run the SignalMasterTable creation script first")
             return False
         
-        data = pd.read_csv(master_path, usecols=['permno', 'ticker', 'time_avail_m', 'prc'])
+        data = pd.read_csv(master_path, usecols=['permno', 'ticker', 'time_avail_m', 'prc', 'tickerIBES'])
         
         # Merge with monthly CRSP data
         crsp_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/monthlyCRSP.csv")
@@ -125,9 +131,17 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         data = data[data['time_avail_m'].dt.month == 6]
         
         # Merge with IBES data
+        logger.info(f"Before IBES merges: {len(data)} observations")
+        logger.info(f"FROE1 data: {len(froe1_data)} observations")
+        logger.info(f"FROE2 data: {len(froe2_data)} observations")
+        logger.info(f"LTG data: {len(ltg_data)} observations")
+        
         data = data.merge(froe1_data, on=['tickerIBES', 'time_avail_m'], how='inner')
+        logger.info(f"After FROE1 merge: {len(data)} observations")
         data = data.merge(froe2_data, on=['tickerIBES', 'time_avail_m'], how='left')
+        logger.info(f"After FROE2 merge: {len(data)} observations")
         data = data.merge(ltg_data, on=['tickerIBES', 'time_avail_m'], how='left')
+        logger.info(f"After LTG merge: {len(data)} observations")
         
         # Sort data for time series operations (equivalent to Stata's "xtset permno time_avail_m")
         data = data.sort_values(['permno', 'time_avail_m'])
@@ -167,14 +181,23 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
         data['ceq3'] = data['ceq2'] * (1 + data['FROE2'] * (1 - data['k']))
         
         # Apply screens (equivalent to Stata's drop if statements)
+        logger.info(f"Before screens: {len(data)} observations")
         data = data[data['ceq'] > 0]
+        logger.info(f"After ceq > 0: {len(data)} observations")
         data = data[data['ceq'].notna()]
+        logger.info(f"After ceq notna: {len(data)} observations")
         data = data[np.abs(data['ROE']) <= 1]
+        logger.info(f"After ROE <= 1: {len(data)} observations")
         data = data[np.abs(data['FROE1']) <= 1]
+        logger.info(f"After FROE1 <= 1: {len(data)} observations")
         data = data[data['k'] <= 1]
+        logger.info(f"After k <= 1: {len(data)} observations")
         data = data[pd.to_datetime(data['datadate']).dt.month >= 6]
+        logger.info(f"After datadate month >= 6: {len(data)} observations")
         data = data[data['feps2'].notna()]
+        logger.info(f"After feps2 notna: {len(data)} observations")
         data = data[data['feps1'].notna()]
+        logger.info(f"After feps1 notna: {len(data)} observations")
         
         # SIGNAL CONSTRUCTION
         logger.info("Calculating predictor signals...")

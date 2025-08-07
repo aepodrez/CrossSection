@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import logging
 from pathlib import Path
+from sklearn.linear_model import LinearRegression
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -57,51 +58,67 @@ def zz2_betavix():
         # Sort by permno and time_d
         data = data.sort_values(['permno', 'time_d'])
         
+        # Remove any missing values
+        data = data.dropna(subset=['ret', 'mktrf', 'dVIX'])
+        
+        logger.info(f"Processing {len(data)} observations for {data['permno'].nunique()} stocks")
+        
         # SIGNAL CONSTRUCTION
-        logger.info("Setting up CAPM regression for systematic volatility")
+        logger.info("Calculating BetaVIX using rolling regressions")
         
-        # Create time index for each permno
-        data['time_temp'] = data.groupby('permno').cumcount() + 1
-        
-        # Initialize BetaVIX
+        # Initialize BetaVIX column
         data['betaVIX'] = np.nan
         
-        # Run rolling regressions for each firm
-        logger.info("Running rolling regressions for BetaVIX calculation")
-        for permno in data['permno'].unique():
-            firm_data = data[data['permno'] == permno].copy()
+        # Process each stock separately to avoid memory issues
+        unique_permnos = data['permno'].unique()
+        total_stocks = len(unique_permnos)
+        
+        logger.info(f"Processing {total_stocks} stocks...")
+        
+        for i, permno in enumerate(unique_permnos):
+            if i % 1000 == 0:
+                logger.info(f"Processing stock {i+1}/{total_stocks} ({(i+1)/total_stocks*100:.1f}%)")
             
-            if len(firm_data) >= 15:  # Need at least 15 observations
-                for i in range(19, len(firm_data)):  # Start from 20th observation
-                    window_data = firm_data.iloc[i-19:i+1]  # 20-day window
-                    
-                    if len(window_data) == 20:  # Ensure full window
-                        try:
-                            # Prepare regression variables
-                            valid_data = window_data.dropna(subset=['ret', 'mktrf', 'dVIX'])
+            # Get data for this stock
+            stock_data = data[data['permno'] == permno].copy()
+            
+            if len(stock_data) < 20:  # Need at least 20 observations
+                continue
+                
+            # Create time index
+            stock_data = stock_data.reset_index(drop=True)
+            
+            # Calculate rolling betas
+            for j in range(19, len(stock_data)):  # Start from 20th observation
+                window_data = stock_data.iloc[j-19:j+1]  # 20-day window
+                
+                if len(window_data) == 20 and window_data.dropna().shape[0] >= 15:
+                    try:
+                        # Prepare regression variables
+                        X = window_data[['mktrf', 'dVIX']].values
+                        y = window_data['ret'].values
+                        
+                        # Remove any rows with NaN
+                        valid_mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+                        if valid_mask.sum() >= 15:
+                            X_valid = X[valid_mask]
+                            y_valid = y[valid_mask]
                             
-                            if len(valid_data) >= 15:  # Need at least 15 valid observations
-                                X = np.column_stack([
-                                    np.ones(len(valid_data)),
-                                    valid_data['mktrf'].values,
-                                    valid_data['dVIX'].values
-                                ])
-                                y = valid_data['ret'].values
-                                
-                                # Run regression: ret = α + β1*mktrf + β2*dVIX + ε
-                                beta = np.linalg.lstsq(X, y, rcond=None)[0]
-                                
-                                # Store the VIX beta (coefficient on dVIX)
-                                data.loc[window_data.index[-1], 'betaVIX'] = beta[2]
-                        except:
-                            continue
+                            # Add constant term
+                            X_valid = np.column_stack([np.ones(len(X_valid)), X_valid])
+                            
+                            # Run regression
+                            reg = LinearRegression(fit_intercept=False)
+                            reg.fit(X_valid, y_valid)
+                            
+                            # Store the VIX beta (coefficient on dVIX, which is the 3rd coefficient)
+                            if len(reg.coef_) >= 3:
+                                data.loc[stock_data.index[j], 'betaVIX'] = reg.coef_[2]
+                    except:
+                        continue
         
         # Convert to monthly frequency
         logger.info("Converting to monthly frequency")
-        # Convert time_d to datetime if needed for period conversion
-        if not pd.api.types.is_datetime64_any_dtype(data['time_d']):
-            data['time_d'] = pd.to_datetime(data['time_d'])
-        
         data['time_avail_m'] = data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Aggregate to monthly level (keep last observation per month)
@@ -114,6 +131,7 @@ def zz2_betavix():
         # For BetaVIX
         betavix_output = monthly_data[['permno', 'time_avail_m', 'betaVIX']].copy()
         betavix_output = betavix_output.dropna(subset=['betaVIX'])
+        
         # Convert time_avail_m to datetime if needed for strftime
         if not pd.api.types.is_datetime64_any_dtype(betavix_output['time_avail_m']):
             betavix_output['time_avail_m'] = pd.to_datetime(betavix_output['time_avail_m'])
@@ -131,10 +149,11 @@ def zz2_betavix():
         logger.info(f"BetaVIX: {len(betavix_output)} observations")
         
         logger.info("Successfully completed BetaVIX predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in BetaVIX calculation: {str(e)}")
-        raise
+        return False
 
 if __name__ == "__main__":
-    main()
+    zz2_betavix()

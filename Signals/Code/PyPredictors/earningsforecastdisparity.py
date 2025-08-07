@@ -151,7 +151,7 @@ def earningsforecastdisparity():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "EarningsForecastDisparity.csv"
+        csv_output_path = predictors_dir / "earningsforecastdisparity.csv"
         csv_data = output_data[['permno', 'yyyymm', 'EarningsForecastDisparity']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved EarningsForecastDisparity predictor to: {csv_output_path}")

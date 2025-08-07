@@ -54,6 +54,9 @@ def ageipo():
         # Convert time_avail_m to datetime for calculations
         data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
         
+        # Convert IPOdate to datetime for calculations
+        data['IPOdate'] = pd.to_datetime(data['IPOdate'])
+        
         # SIGNAL CONSTRUCTION
         logger.info("Constructing AgeIPO signal...")
         
@@ -103,7 +106,7 @@ def ageipo():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "AgeIPO.csv"
+        csv_output_path = predictors_dir / "ageipo.csv"
         csv_data = output_data[['permno', 'yyyymm', 'AgeIPO']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved AgeIPO predictor to: {csv_output_path}")

@@ -74,7 +74,7 @@ def credratdg():
         # Keep downgrades only
         ciq_data = ciq_data[
             (ciq_data['gvkey'].notna()) & 
-            (ciq_data['ratingaction'] == "Downgrade")
+            (ciq_data['ratingactionword'] == "Downgrade")
         ]
         
         # Create downgrade indicator

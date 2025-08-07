@@ -27,11 +27,6 @@ def zg_bidasktaq():
         # Load the prepared data file
         input_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Code/Data/Prep/hf_monthly.csv")
         
-        if not input_path.exists():
-            logger.warning(f"Input file not found: {input_path}")
-            logger.warning("This is expected if the prep script hasn't been run yet")
-            return True  # Return True to avoid blocking the pipeline
-        
         # Load the data
         data = pd.read_csv(input_path)
         logger.info(f"Loaded {len(data)} records from {input_path}")

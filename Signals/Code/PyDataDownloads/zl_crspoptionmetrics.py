@@ -38,6 +38,15 @@ def zl_crspoptionmetrics():
         data = pd.read_csv(input_path)
         logger.info(f"Successfully loaded {len(data)} records from CRSP-OptionMetrics linking data")
         
+        # Rename columns to match expected format
+        if 'PERMNO' in data.columns:
+            data = data.rename(columns={'PERMNO': 'permno'})
+            logger.info("Renamed PERMNO to permno")
+        
+        if 'SCORE' in data.columns:
+            data = data.rename(columns={'SCORE': 'score'})
+            logger.info("Renamed SCORE to score")
+        
         # Display initial data info
         logger.info("Initial data info:")
         logger.info(f"  Columns: {list(data.columns)}")

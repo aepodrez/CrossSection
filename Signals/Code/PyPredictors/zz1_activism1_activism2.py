@@ -159,7 +159,7 @@ def zz1_activism1_activism2():
             activism1_data['time_avail_m'] = pd.to_datetime(activism1_data['time_avail_m'])
         
         activism1_data['yyyymm'] = activism1_data['time_avail_m'].dt.year * 100 + activism1_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "Activism1.csv"
+        csv_output_path = predictors_dir / "activism1.csv"
         activism1_data[['permno', 'yyyymm', 'Activism1']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved Activism1 predictor to: {csv_output_path}")
         
@@ -171,7 +171,7 @@ def zz1_activism1_activism2():
             activism2_data['time_avail_m'] = pd.to_datetime(activism2_data['time_avail_m'])
         
         activism2_data['yyyymm'] = activism2_data['time_avail_m'].dt.year * 100 + activism2_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "Activism2.csv"
+        csv_output_path = predictors_dir / "activism2.csv"
         activism2_data[['permno', 'yyyymm', 'Activism2']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved Activism2 predictor to: {csv_output_path}")
         

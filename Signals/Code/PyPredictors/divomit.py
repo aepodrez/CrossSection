@@ -42,7 +42,7 @@ def divomit():
         logger.info(f"After filtering for cash dividends: {len(dist_data)} records")
         
         # Create time_avail_m from exdt (equivalent to Stata's "gen time_avail_m = mofd(exdt)")
-        dist_data['time_avail_m'] = pd.to_datetime(dist_data['exdt']).dt.to_period('M')
+        dist_data['time_avail_m'] = pd.to_datetime(dist_data['exdt']).dt.to_period('M').astype(str)
         
         # Drop missing time_avail_m or divamt (equivalent to Stata's "drop if time_avail_m == . | divamt == .")
         dist_data = dist_data.dropna(subset=['time_avail_m', 'divamt'])

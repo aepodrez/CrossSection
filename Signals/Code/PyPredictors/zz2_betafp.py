@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import logging
 from pathlib import Path
+from sklearn.linear_model import LinearRegression
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -51,6 +52,11 @@ def zz2_betafp():
         # Sort by permno and time_d
         data = data.sort_values(['permno', 'time_d'])
         
+        # Remove any missing values
+        data = data.dropna(subset=['ret', 'mktrf'])
+        
+        logger.info(f"Processing {len(data)} observations for {data['permno'].nunique()} stocks")
+        
         # SIGNAL CONSTRUCTION
         logger.info("Calculating log returns")
         
@@ -58,68 +64,78 @@ def zz2_betafp():
         data['LogRet'] = np.log(1 + data['ret'])
         data['LogMkt'] = np.log(1 + data['mktrf'])
         
-        # Create time index for each permno
-        data['time_temp'] = data.groupby('permno').cumcount() + 1
-        
-        # Calculate rolling standard deviations
-        logger.info("Calculating rolling standard deviations")
-        data['sd252_LogRet'] = data.groupby('permno')['LogRet'].rolling(window=252, min_periods=120).std().reset_index(0, drop=True)
-        data['sd252_LogMkt'] = data.groupby('permno')['LogMkt'].rolling(window=252, min_periods=120).std().reset_index(0, drop=True)
-        
-        # Calculate lagged returns for correlation
-        logger.info("Calculating lagged returns for correlation")
-        data['LogRet_lag1'] = data.groupby('permno')['LogRet'].shift(1)
-        data['LogRet_lag2'] = data.groupby('permno')['LogRet'].shift(2)
-        data['LogMkt_lag1'] = data.groupby('permno')['LogMkt'].shift(1)
-        data['LogMkt_lag2'] = data.groupby('permno')['LogMkt'].shift(2)
-        
-        # Calculate 3-day returns
-        data['tempRi'] = data['LogRet_lag2'] + data['LogRet_lag1'] + data['LogRet']
-        data['tempRm'] = data['LogMkt_lag2'] + data['LogMkt_lag1'] + data['LogMkt']
-        
         # Initialize BetaFP
         data['BetaFP'] = np.nan
         
-        # Run rolling regressions for each firm
-        logger.info("Running rolling regressions for BetaFP calculation")
-        for permno in data['permno'].unique():
-            firm_data = data[data['permno'] == permno].copy()
+        # Process each stock separately to avoid memory issues
+        unique_permnos = data['permno'].unique()
+        total_stocks = len(unique_permnos)
+        
+        logger.info(f"Processing {total_stocks} stocks...")
+        
+        for i, permno in enumerate(unique_permnos):
+            if i % 1000 == 0:
+                logger.info(f"Processing stock {i+1}/{total_stocks} ({(i+1)/total_stocks*100:.1f}%)")
             
-            if len(firm_data) >= 750:  # Need at least 750 observations
-                for i in range(1259, len(firm_data)):  # Start from 1260th observation
-                    window_data = firm_data.iloc[i-1259:i+1]  # 1260-day window
-                    
-                    if len(window_data) == 1260:  # Ensure full window
-                        try:
-                            # Prepare regression variables
-                            valid_data = window_data.dropna(subset=['tempRi', 'tempRm'])
+            # Get data for this stock
+            stock_data = data[data['permno'] == permno].copy()
+            
+            if len(stock_data) < 1260:  # Need at least 1260 observations
+                continue
+                
+            # Create time index
+            stock_data = stock_data.reset_index(drop=True)
+            
+            # Calculate rolling standard deviations (252-day window)
+            stock_data['sd252_LogRet'] = stock_data['LogRet'].rolling(window=252, min_periods=120).std()
+            stock_data['sd252_LogMkt'] = stock_data['LogMkt'].rolling(window=252, min_periods=120).std()
+            
+            # Calculate lagged returns for correlation
+            stock_data['LogRet_lag1'] = stock_data['LogRet'].shift(1)
+            stock_data['LogRet_lag2'] = stock_data['LogRet'].shift(2)
+            stock_data['LogMkt_lag1'] = stock_data['LogMkt'].shift(1)
+            stock_data['LogMkt_lag2'] = stock_data['LogMkt'].shift(2)
+            
+            # Calculate 3-day returns
+            stock_data['tempRi'] = stock_data['LogRet_lag2'] + stock_data['LogRet_lag1'] + stock_data['LogRet']
+            stock_data['tempRm'] = stock_data['LogMkt_lag2'] + stock_data['LogMkt_lag1'] + stock_data['LogMkt']
+            
+            # Calculate rolling betas
+            for j in range(1259, len(stock_data)):  # Start from 1260th observation
+                window_data = stock_data.iloc[j-1259:j+1]  # 1260-day window
+                
+                if len(window_data) == 1260:
+                    try:
+                        # Prepare regression variables
+                        valid_data = window_data.dropna(subset=['tempRi', 'tempRm'])
+                        
+                        if len(valid_data) >= 750:  # Need at least 750 valid observations
+                            X = valid_data['tempRm'].values.reshape(-1, 1)
+                            y = valid_data['tempRi'].values
                             
-                            if len(valid_data) >= 750:  # Need at least 750 valid observations
-                                X = np.column_stack([np.ones(len(valid_data)), valid_data['tempRm'].values])
-                                y = valid_data['tempRi'].values
-                                
-                                # Run regression
-                                beta = np.linalg.lstsq(X, y, rcond=None)[0]
-                                fitted_values = X @ beta
-                                residuals = y - fitted_values
-                                
-                                # Calculate R-squared
-                                ss_res = np.sum(residuals ** 2)
-                                ss_tot = np.sum((y - np.mean(y)) ** 2)
-                                r_squared = 1 - (ss_res / ss_tot)
-                                
-                                # Calculate BetaFP
-                                if not np.isnan(firm_data.iloc[i]['sd252_LogRet']) and not np.isnan(firm_data.iloc[i]['sd252_LogMkt']):
-                                    data.loc[window_data.index[-1], 'BetaFP'] = np.sqrt(r_squared) * (firm_data.iloc[i]['sd252_LogRet'] / firm_data.iloc[i]['sd252_LogMkt'])
-                        except:
-                            continue
+                            # Add constant term
+                            X = np.column_stack([np.ones(len(X)), X])
+                            
+                            # Run regression
+                            reg = LinearRegression(fit_intercept=False)
+                            reg.fit(X, y)
+                            
+                            # Calculate R-squared
+                            y_pred = reg.predict(X)
+                            ss_res = np.sum((y - y_pred) ** 2)
+                            ss_tot = np.sum((y - np.mean(y)) ** 2)
+                            r_squared = 1 - (ss_res / ss_tot)
+                            
+                            # Calculate BetaFP
+                            if (not np.isnan(stock_data.iloc[j]['sd252_LogRet']) and 
+                                not np.isnan(stock_data.iloc[j]['sd252_LogMkt']) and
+                                stock_data.iloc[j]['sd252_LogMkt'] != 0):
+                                data.loc[stock_data.index[j], 'BetaFP'] = np.sqrt(r_squared) * (stock_data.iloc[j]['sd252_LogRet'] / stock_data.iloc[j]['sd252_LogMkt'])
+                    except:
+                        continue
         
         # Convert to monthly frequency
         logger.info("Converting to monthly frequency")
-        # Convert time_d to datetime if needed for period conversion
-        if not pd.api.types.is_datetime64_any_dtype(data['time_d']):
-            data['time_d'] = pd.to_datetime(data['time_d'])
-        
         data['time_avail_m'] = data['time_d'].dt.to_period('M').dt.to_timestamp()
         
         # Aggregate to monthly level (keep last observation per month)
@@ -132,6 +148,7 @@ def zz2_betafp():
         # For BetaFP
         betafp_output = monthly_data[['permno', 'time_avail_m', 'BetaFP']].copy()
         betafp_output = betafp_output.dropna(subset=['BetaFP'])
+        
         # Convert time_avail_m to datetime if needed for strftime
         if not pd.api.types.is_datetime64_any_dtype(betafp_output['time_avail_m']):
             betafp_output['time_avail_m'] = pd.to_datetime(betafp_output['time_avail_m'])
@@ -143,16 +160,17 @@ def zz2_betafp():
         logger.info("Saving results")
         
         # Save BetaFP
-        betafp_file = output_path / "BetaFP.csv"
+        betafp_file = output_path / "betafp.csv"
         betafp_output.to_csv(betafp_file, index=False)
         logger.info(f"Saved BetaFP predictor to {betafp_file}")
         logger.info(f"BetaFP: {len(betafp_output)} observations")
         
         logger.info("Successfully completed BetaFP predictor calculation")
+        return True
         
     except Exception as e:
         logger.error(f"Error in BetaFP calculation: {str(e)}")
-        raise
+        return False
 
 if __name__ == "__main__":
-    main()
+    zz2_betafp()

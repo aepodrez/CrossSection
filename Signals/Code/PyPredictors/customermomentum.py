@@ -43,10 +43,12 @@ def customermomentum():
         logger.info("Processing CustomerMomentum signal...")
         
         # Rename custmom to CustomerMomentum (equivalent to Stata's "rename custmom CustomerMomentum")
-        if 'custmom' in data.columns:
+        if 'CustMom' in data.columns:
+            data = data.rename(columns={'CustMom': 'CustomerMomentum'})
+        elif 'custmom' in data.columns:
             data = data.rename(columns={'custmom': 'CustomerMomentum'})
         elif 'CustomerMomentum' not in data.columns:
-            logger.error("Neither 'custmom' nor 'CustomerMomentum' column found in data")
+            logger.error("Neither 'CustMom', 'custmom', nor 'CustomerMomentum' column found in data")
             return False
         
         logger.info("Successfully processed CustomerMomentum signal")

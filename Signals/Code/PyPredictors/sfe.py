@@ -45,6 +45,7 @@ def sfe():
         logger.info(f"After keeping fpi == '1' and March forecasts: {len(ibes_data)} records")
         
         # Keep only forecasts past June (equivalent to Stata's "keep if fpedats != . & fpedats > statpers + 90")
+        ibes_data['fpedats'] = pd.to_datetime(ibes_data['fpedats'])
         ibes_data = ibes_data[(ibes_data['fpedats'].notna()) & 
                               (ibes_data['fpedats'] > ibes_data['statpers'] + pd.Timedelta(days=90))]
         logger.info(f"After keeping forecasts past June: {len(ibes_data)} records")
@@ -77,8 +78,11 @@ def sfe():
         # Rename time_avail_m to prc_time for merge (equivalent to Stata's "rename time_avail_m prc_time")
         master_data = master_data.rename(columns={'time_avail_m': 'prc_time'})
         
+        # Rename ticker to tickerIBES for merge
+        master_data = master_data.rename(columns={'ticker': 'tickerIBES'})
+        
         # Merge with temporary IBES data
-        data = master_data.merge(ibes_data[['tickerIBES', 'prc_time', 'medest']], 
+        data = master_data.merge(ibes_data[['tickerIBES', 'prc_time', 'medest', 'numest']], 
                                 on=['tickerIBES', 'prc_time'], how='inner')
         logger.info(f"After merging with IBES data: {len(data)} records")
         

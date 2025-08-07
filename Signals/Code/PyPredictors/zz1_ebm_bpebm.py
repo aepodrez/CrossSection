@@ -94,7 +94,7 @@ def zz1_ebm_bpebm():
             ebm_data['time_avail_m'] = pd.to_datetime(ebm_data['time_avail_m'])
         
         ebm_data['yyyymm'] = ebm_data['time_avail_m'].dt.year * 100 + ebm_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "EBM.csv"
+        csv_output_path = predictors_dir / "ebm.csv"
         ebm_data[['permno', 'yyyymm', 'EBM']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved EBM predictor to: {csv_output_path}")
         
@@ -106,7 +106,7 @@ def zz1_ebm_bpebm():
             bpebm_data['time_avail_m'] = pd.to_datetime(bpebm_data['time_avail_m'])
         
         bpebm_data['yyyymm'] = bpebm_data['time_avail_m'].dt.year * 100 + bpebm_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "BPEBM.csv"
+        csv_output_path = predictors_dir / "bpebm.csv"
         bpebm_data[['permno', 'yyyymm', 'BPEBM']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved BPEBM predictor to: {csv_output_path}")
         

@@ -105,7 +105,7 @@ def tax():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "Tax.csv"
+        csv_output_path = predictors_dir / "tax.csv"
         csv_data = output_data[['permno', 'yyyymm', 'Tax']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved Tax predictor to: {csv_output_path}")

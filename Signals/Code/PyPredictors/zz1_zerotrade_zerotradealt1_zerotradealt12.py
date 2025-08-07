@@ -168,4 +168,4 @@ def zz1_zerotrade_zerotradealt1_zerotradealt12():
         raise
 
 if __name__ == "__main__":
-    main()
+    zz1_zerotrade_zerotradealt1_zerotradealt12()

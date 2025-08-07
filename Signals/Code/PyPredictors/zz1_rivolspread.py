@@ -78,7 +78,7 @@ def zz1_rivolspread():
         realizedvol_data = realizedvol_data.drop('yyyymm', axis=1)
         
         # Annualize realized volatility (multiply by sqrt(252))
-        realizedvol_data['realizedvol'] = realizedvol_data['realizedvol'] * np.sqrt(252)
+        realizedvol_data['RealizedVol'] = realizedvol_data['RealizedVol'] * np.sqrt(252)
         realizedvol_data.to_csv(temp2_path, index=False)
         
         # DATA LOAD
@@ -112,7 +112,7 @@ def zz1_rivolspread():
         logger.info("Calculating RIVolSpread")
         
         # Calculate RIVolSpread = realized volatility - implied volatility
-        data['RIVolSpread'] = data['realizedvol'] - data['impvol']
+        data['RIVolSpread'] = data['RealizedVol'] - data['impvol']
         
         # Drop missing RIVolSpread observations
         data = data.dropna(subset=['RIVolSpread'])
@@ -151,4 +151,4 @@ def zz1_rivolspread():
         raise
 
 if __name__ == "__main__":
-    main()
+    zz1_rivolspread()

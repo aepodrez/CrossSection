@@ -82,7 +82,7 @@ def zz1_fr_frbook():
     fr_data = data[['permno', 'time_avail_m', 'FR']].copy()
     fr_data = fr_data.dropna(subset=['FR'])  # equivalent to "drop if FR == ."
     fr_data['yyyymm'] = fr_data['time_avail_m'].dt.year * 100 + fr_data['time_avail_m'].dt.month
-    fr_data[['permno', 'yyyymm', 'FR']].to_csv(predictors_dir / "FR.csv", index=False)
+    fr_data[['permno', 'yyyymm', 'FR']].to_csv(predictors_dir / "fr.csv", index=False)
     
     # Save FRbook (equivalent to "do saveplacebo FRbook")
     frbook_data = data[['permno', 'time_avail_m', 'FRbook']].copy()

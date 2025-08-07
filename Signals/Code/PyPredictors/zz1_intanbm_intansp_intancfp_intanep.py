@@ -211,25 +211,25 @@ def zz1_intanbm_intansp_intancfp_intanep():
         logger.info("Saving results")
         
         # Save IntanBM
-        intanbm_file = output_path / "IntanBM.csv"
+        intanbm_file = output_path / "intanbm.csv"
         intanbm_output.to_csv(intanbm_file, index=False)
         logger.info(f"Saved IntanBM predictor to {intanbm_file}")
         logger.info(f"IntanBM: {len(intanbm_output)} observations")
         
         # Save IntanSP
-        intansp_file = output_path / "IntanSP.csv"
+        intansp_file = output_path / "intansp.csv"
         intansp_output.to_csv(intansp_file, index=False)
         logger.info(f"Saved IntanSP predictor to {intansp_file}")
         logger.info(f"IntanSP: {len(intansp_output)} observations")
         
         # Save IntanCFP
-        intancfp_file = output_path / "IntanCFP.csv"
+        intancfp_file = output_path / "intancfp.csv"
         intancfp_output.to_csv(intancfp_file, index=False)
         logger.info(f"Saved IntanCFP predictor to {intancfp_file}")
         logger.info(f"IntanCFP: {len(intancfp_output)} observations")
         
         # Save IntanEP
-        intanep_file = output_path / "IntanEP.csv"
+        intanep_file = output_path / "intanep.csv"
         intanep_output.to_csv(intanep_file, index=False)
         logger.info(f"Saved IntanEP predictor to {intanep_file}")
         logger.info(f"IntanEP: {len(intanep_output)} observations")

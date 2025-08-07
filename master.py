@@ -63,12 +63,19 @@ fred = Fred(api_key=FRED_API_KEY)
 log_dir = Path(PROJECT_PATH) / "Signals" / "Logs"
 log_dir.mkdir(parents=True, exist_ok=True)
 
+# Create detailed error log handler
+detailed_error_handler = logging.FileHandler(log_dir / "detailed_errors.log")
+detailed_error_handler.setLevel(logging.ERROR)
+detailed_error_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+detailed_error_handler.setFormatter(detailed_error_formatter)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_dir / "master.log"),
-        logging.StreamHandler()
+        logging.StreamHandler(),
+        detailed_error_handler  # Add detailed error logging
     ]
 )
 
@@ -265,6 +272,8 @@ def download_data():
             sig = inspect.signature(func)
             if 'wrds_conn' in sig.parameters:
                 success = func(wrds_conn)
+            elif 'fred_conn' in sig.parameters:
+                success = func(fred)
             else:
                 success = func()
             
@@ -286,13 +295,18 @@ def download_data():
                 logger.error(f"❌ {func.__name__} failed after {duration:.1f} seconds")
                 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             logger.error(f"❌ {func.__name__} failed with exception: {e}")
+            logger.error(f"Detailed error for {func.__name__}: {error_details}")
+            
             download_results.append({
                 'function': func.__name__,
                 'success': False,
                 'duration_seconds': 0,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'error': str(e)
+                'error': str(e),
+                'error_details': error_details
             })
     
     # Summary report
@@ -307,6 +321,8 @@ def download_data():
         logger.warning("Failed downloads:")
         for result in failed_downloads:
             logger.warning(f"   - {result['function']}: {result.get('error', 'Unknown error')}")
+            if 'error_details' in result:
+                logger.error(f"     Detailed error for {result['function']}: {result['error_details']}")
     
     # Save download results to log file
     results_df = pd.DataFrame(download_results)
@@ -374,13 +390,18 @@ def construct_predictor_signals():
                 logger.error(f"❌ {func.__name__} failed after {duration:.1f} seconds")
                 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             logger.error(f"❌ {func.__name__} failed with exception: {e}")
+            logger.error(f"Detailed error for {func.__name__}: {error_details}")
+            
             predictor_results.append({
                 'function': func.__name__,
                 'success': False,
                 'duration_seconds': 0,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'error': str(e)
+                'error': str(e),
+                'error_details': error_details
             })
     
     # Summary report
@@ -395,6 +416,8 @@ def construct_predictor_signals():
         logger.warning("Failed predictors:")
         for result in failed_predictors:
             logger.warning(f"   - {result['function']}: {result.get('error', 'Unknown error')}")
+            if 'error_details' in result:
+                logger.error(f"     Detailed error for {result['function']}: {result['error_details']}")
     
     # Save predictor results to log file
     results_df = pd.DataFrame(predictor_results)

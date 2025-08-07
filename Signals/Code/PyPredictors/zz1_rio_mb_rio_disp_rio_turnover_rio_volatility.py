@@ -48,8 +48,24 @@ def zz1_rio_mb_rio_disp_rio_turnover_rio_volatility():
         
         # DATA LOAD
         logger.info("Loading SignalMasterTable data")
-        required_vars = ['permno', 'tickerIBES', 'time_avail_m', 'exchcd', 'mve_c']
+        required_vars = ['permno', 'time_avail_m', 'exchcd', 'mve_c']
         data = pd.read_csv(master_path, usecols=required_vars)
+        
+        # Load the linking table to get tickerIBES for each permno
+        linking_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/IBESCRSPLinkingTable.csv")
+        
+        logger.info(f"Loading IBES-CRSP linking table from: {linking_path}")
+        
+        if not linking_path.exists():
+            logger.error(f"IBES-CRSP linking table not found: {linking_path}")
+            return False
+        
+        linking_data = pd.read_csv(linking_path)
+        logger.info(f"Loaded linking table with {len(linking_data)} records")
+        
+        # Merge with linking table to get tickerIBES
+        data = data.merge(linking_data, on='permno', how='inner')
+        logger.info(f"After merging with linking table: {len(data)} records")
         
         # Merge with TR_13F for institutional ownership
         logger.info("Merging with TR_13F for institutional ownership")
@@ -199,25 +215,25 @@ def zz1_rio_mb_rio_disp_rio_turnover_rio_volatility():
         logger.info("Saving results")
         
         # Save RIO_MB
-        rio_mb_file = output_path / "RIO_MB.csv"
+        rio_mb_file = output_path / "rio_mb.csv"
         rio_mb_output.to_csv(rio_mb_file, index=False)
         logger.info(f"Saved RIO_MB predictor to {rio_mb_file}")
         logger.info(f"RIO_MB: {len(rio_mb_output)} observations")
         
         # Save RIO_Disp
-        rio_disp_file = output_path / "RIO_Disp.csv"
+        rio_disp_file = output_path / "rio_disp.csv"
         rio_disp_output.to_csv(rio_disp_file, index=False)
         logger.info(f"Saved RIO_Disp predictor to {rio_disp_file}")
         logger.info(f"RIO_Disp: {len(rio_disp_output)} observations")
         
         # Save RIO_Turnover
-        rio_turnover_file = output_path / "RIO_Turnover.csv"
+        rio_turnover_file = output_path / "rio_turnover.csv"
         rio_turnover_output.to_csv(rio_turnover_file, index=False)
         logger.info(f"Saved RIO_Turnover predictor to {rio_turnover_file}")
         logger.info(f"RIO_Turnover: {len(rio_turnover_output)} observations")
         
         # Save RIO_Volatility
-        rio_volatility_file = output_path / "RIO_Volatility.csv"
+        rio_volatility_file = output_path / "rio_volatility.csv"
         rio_volatility_output.to_csv(rio_volatility_file, index=False)
         logger.info(f"Saved RIO_Volatility predictor to {rio_volatility_file}")
         logger.info(f"RIO_Volatility: {len(rio_volatility_output)} observations")

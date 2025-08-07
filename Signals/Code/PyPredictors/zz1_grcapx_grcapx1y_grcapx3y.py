@@ -145,4 +145,4 @@ def zz1_grcapx_grcapx1y_grcapx3y():
         raise
 
 if __name__ == "__main__":
-    main()
+    zz1_grcapx_grcapx1y_grcapx3y()
