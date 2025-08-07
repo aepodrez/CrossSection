@@ -120,6 +120,9 @@ def ms():
             data[f'{var}sum'] = data.groupby('permno')[var].rolling(window=12, min_periods=12).mean().reset_index(0, drop=True)
             data[f'{var}sum'] = data[f'{var}sum'] * 4  # Annualize
         
+        # Convert datadate to datetime for proper month extraction
+        data['datadate'] = pd.to_datetime(data['datadate'])
+        
         # Special handling for oancfqsum for years <= 1988
         data.loc[data['datadate'].dt.year <= 1988, 'oancfqsum'] = data.loc[data['datadate'].dt.year <= 1988, 'fopt'] - data.loc[data['datadate'].dt.year <= 1988, 'wcapch']
         
@@ -172,10 +175,11 @@ def ms():
         
         # Fix tempMS at most recent data release for entire year
         # This is a complex timing adjustment that matches OP's approach
+        
+        # Convert time_avail_m to datetime for proper month extraction
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
         data['month_avail'] = data['time_avail_m'].dt.month
         
-        # Convert datadate to datetime for proper month extraction
-        data['datadate'] = pd.to_datetime(data['datadate'])
         data['month_date'] = (data['datadate'].dt.month + 6) % 12
         data.loc[data['month_avail'] != data['month_date'], 'tempMS'] = np.nan
         
@@ -211,7 +215,7 @@ def ms():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "MS.csv"
+        csv_output_path = predictors_dir / "ms.csv"
         csv_data = output_data[['permno', 'yyyymm', 'MS']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved MS predictor to: {csv_output_path}")

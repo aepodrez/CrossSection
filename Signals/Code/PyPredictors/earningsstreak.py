@@ -47,7 +47,7 @@ def earningsstreak():
         
         # Use actual release date as date of availability (equivalent to Stata's date manipulation)
         data = data.drop(columns=['time_avail_m'])
-        data['time_avail_m'] = pd.to_datetime(data['anndats_act']).dt.to_period('M')
+        data['time_avail_m'] = pd.to_datetime(data['anndats_act']).dt.to_period('M').astype(str)
         
         # Keep the last forecast before the actual release (equivalent to Stata's sort and keep logic)
         data = data.sort_values(['tickerIBES', 'time_avail_m', 'anndats_act', 'statpers'])
@@ -145,7 +145,7 @@ def earningsstreak():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "EarningsStreak.csv"
+        csv_output_path = predictors_dir / "earningsstreak.csv"
         csv_data = output_data[['permno', 'yyyymm', 'EarningsStreak']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved EarningsStreak predictor to: {csv_output_path}")

@@ -221,6 +221,21 @@ def check_predictor_output_file(func_name):
     """Check what output file a predictor function creates"""
     # Predictor functions save to the Signals/Data/Predictors directory
     # with the function name as the filename
+    
+    # Special handling for functions that create multiple output files
+    if func_name == "zz0_realizedvol_idiovol3f_returnskew3f":
+        # This function creates three separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "realizedvol.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "idiovol3f.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "returnskew3f.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    # Default case: single output file with function name
     output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / f"{func_name}.csv"
     return output_file
 

@@ -161,7 +161,7 @@ def divyieldst():
         
         # Create 3-quintile groups for positive expected dividend yield (equivalent to Stata's "egen DivYieldST = fastxtile(Edy1pos), by(time_avail_m) n(3)")
         merged_data['DivYieldST'] = merged_data.groupby('time_avail_m')['Edy1pos'].transform(
-            lambda x: pd.qcut(x, q=3, labels=[1, 2, 3], duplicates='drop')
+            lambda x: pd.qcut(x, q=3, duplicates='drop')
         )
         
         # Set DivYieldST to 0 for stocks with zero expected dividend yield (equivalent to Stata's "replace DivYieldST = 0 if Edy1 == 0")
@@ -191,7 +191,7 @@ def divyieldst():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "DivYieldST.csv"
+        csv_output_path = predictors_dir / "divyieldst.csv"
         csv_data = output_data[['permno', 'yyyymm', 'DivYieldST']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved DivYieldST predictor to: {csv_output_path}")
