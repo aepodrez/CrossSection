@@ -99,7 +99,7 @@ def compequiss():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "CompEquIss.csv"
+        csv_output_path = predictors_dir / "compequiss.csv"
         csv_data = output_data[['permno', 'yyyymm', 'CompEquIss']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved CompEquIss predictor to: {csv_output_path}")

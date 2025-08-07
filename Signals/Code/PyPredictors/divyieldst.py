@@ -103,6 +103,9 @@ def divyieldst():
         crsp_vars = ['permno', 'time_avail_m', 'ret', 'retx']
         crsp_data = pd.read_csv(crsp_path, usecols=crsp_vars)
         
+        # Convert time_avail_m to datetime for CRSP data as well
+        crsp_data['time_avail_m'] = pd.to_datetime(crsp_data['time_avail_m'])
+        
         merged_data = merged_data.merge(
             crsp_data,
             on=['permno', 'time_avail_m'],

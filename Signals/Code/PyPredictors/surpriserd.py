@@ -17,25 +17,93 @@ def surpriserd():
     """
     Python equivalent of SurpriseRD.do
     
-    TODO: Implement the predictor construction logic from the original Stata file
+    Constructs the SurpriseRD predictor signal for unexpected R&D increase.
     """
-    logger.info("Constructing predictor signal: surpriserd...")
+    logger.info("Constructing predictor signal: SurpriseRD...")
     
     try:
-        # TODO: Implement the actual predictor construction logic here
-        # This should replicate the functionality of SurpriseRD.do
+        # DATA LOAD
+        # Load annual Compustat data
+        compustat_path = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Intermediate/m_aCompustat.csv")
         
-        # Example structure:
-        # 1. Load required data files
-        # 2. Apply predictor-specific calculations
-        # 3. Create the predictor signal
-        # 4. Save the predictor signal
+        logger.info(f"Loading annual Compustat data from: {compustat_path}")
         
-        logger.info(f"Successfully constructed predictor: surpriserd")
+        if not compustat_path.exists():
+            logger.error(f"m_aCompustat not found: {compustat_path}")
+            logger.error("Please run the annual Compustat data creation script first")
+            return False
+        
+        # Load required variables (equivalent to Stata's "use gvkey permno time_avail_m xrd revt at using...")
+        required_vars = ['gvkey', 'permno', 'time_avail_m', 'xrd', 'revt', 'at']
+        
+        data = pd.read_csv(compustat_path, usecols=required_vars)
+        logger.info(f"Successfully loaded {len(data)} records")
+        
+        # SIGNAL CONSTRUCTION
+        logger.info("Calculating SurpriseRD signal...")
+        
+        # Remove duplicates (equivalent to Stata's "bysort permno time_avail_m: keep if _n == 1")
+        data = data.drop_duplicates(subset=['permno', 'time_avail_m'])
+        logger.info(f"After removing duplicates: {len(data)} records")
+        
+        # Sort data for time series operations (equivalent to Stata's "xtset permno time_avail_m")
+        data = data.sort_values(['permno', 'time_avail_m'])
+        
+        # Calculate lagged values (equivalent to Stata's "l12.xrd" and "l12.at")
+        data['xrd_lag12'] = data.groupby('permno')['xrd'].shift(12)
+        data['at_lag12'] = data.groupby('permno')['at'].shift(12)
+        
+        # Calculate SurpriseRD signal (equivalent to Stata's complex conditional logic)
+        # SurpriseRD = 1 if xrd/revt > 0 & xrd/at > 0 & xrd/l12.xrd > 1.05 & (xrd/at)/(l12.xrd/l12.at) > 1.05 & xrd !=. & l12.xrd !=.
+        data['SurpriseRD'] = np.nan
+        
+        # Create conditions for SurpriseRD = 1
+        condition_1 = (data['xrd'] / data['revt'] > 0) & (data['xrd'] / data['at'] > 0)
+        condition_2 = (data['xrd'] / data['xrd_lag12'] > 1.05)
+        condition_3 = ((data['xrd'] / data['at']) / (data['xrd_lag12'] / data['at_lag12']) > 1.05)
+        condition_4 = data['xrd'].notna() & data['xrd_lag12'].notna()
+        
+        # Apply SurpriseRD = 1 condition
+        data.loc[condition_1 & condition_2 & condition_3 & condition_4, 'SurpriseRD'] = 1
+        
+        # Apply SurpriseRD = 0 condition (equivalent to Stata's "replace SurpriseRD = 0 if SurpriseRD==. & (xrd !=. & l12.xrd !=.)")
+        zero_condition = data['SurpriseRD'].isna() & data['xrd'].notna() & data['xrd_lag12'].notna()
+        data.loc[zero_condition, 'SurpriseRD'] = 0
+        
+        logger.info("Successfully calculated SurpriseRD signal")
+        
+        # SAVE RESULTS
+        logger.info("Saving SurpriseRD predictor signal...")
+        
+        # Create output directories if they don't exist
+        predictors_dir = Path("/Users/alexpodrez/Documents/CrossSection/Signals/Data/Predictors")
+        predictors_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Prepare final dataset for saving
+        output_data = data[['permno', 'time_avail_m', 'SurpriseRD']].copy()
+        
+        # Remove missing values
+        output_data = output_data.dropna(subset=['SurpriseRD'])
+        logger.info(f"Final dataset: {len(output_data)} observations")
+        
+        # Create yyyymm column for CSV output
+        # Convert time_avail_m to datetime if needed for year/month extraction
+        if not pd.api.types.is_datetime64_any_dtype(output_data['time_avail_m']):
+            output_data['time_avail_m'] = pd.to_datetime(output_data['time_avail_m'])
+        
+        output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
+        
+        # Save CSV file
+        csv_output_path = predictors_dir / "surpriserd.csv"
+        csv_data = output_data[['permno', 'yyyymm', 'SurpriseRD']].copy()
+        csv_data.to_csv(csv_output_path, index=False)
+        logger.info(f"Saved SurpriseRD predictor to: {csv_output_path}")
+        
+        logger.info("Successfully constructed SurpriseRD predictor signal")
         return True
         
     except Exception as e:
-        logger.error(f"Failed to construct predictor surpriserd: {e}")
+        logger.error(f"Failed to construct SurpriseRD predictor: {e}")
         return False
 
 if __name__ == "__main__":

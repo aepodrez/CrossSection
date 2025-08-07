@@ -121,7 +121,7 @@ def earningssurprise():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "EarningsSurprise.csv"
+        csv_output_path = predictors_dir / "earningssurprise.csv"
         csv_data = output_data[['permno', 'yyyymm', 'EarningsSurprise']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved EarningsSurprise predictor to: {csv_output_path}")

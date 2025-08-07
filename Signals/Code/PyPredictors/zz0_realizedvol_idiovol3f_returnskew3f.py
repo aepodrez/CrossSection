@@ -172,7 +172,7 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         realizedvol_data = monthly_stats[['permno', 'time_avail_m', 'RealizedVol']].copy()
         realizedvol_data = realizedvol_data.dropna(subset=['RealizedVol'])
         realizedvol_data['yyyymm'] = realizedvol_data['time_avail_m'].dt.year * 100 + realizedvol_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "RealizedVol.csv"
+        csv_output_path = predictors_dir / "realizedvol.csv"
         realizedvol_data[['permno', 'yyyymm', 'RealizedVol']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved RealizedVol predictor to: {csv_output_path} ({len(realizedvol_data)} records)")
         
@@ -180,7 +180,7 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         idiovol3f_data = monthly_stats[['permno', 'time_avail_m', 'IdioVol3F']].copy()
         idiovol3f_data = idiovol3f_data.dropna(subset=['IdioVol3F'])
         idiovol3f_data['yyyymm'] = idiovol3f_data['time_avail_m'].dt.year * 100 + idiovol3f_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "IdioVol3F.csv"
+        csv_output_path = predictors_dir / "idiovol3f.csv"
         idiovol3f_data[['permno', 'yyyymm', 'IdioVol3F']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved IdioVol3F predictor to: {csv_output_path} ({len(idiovol3f_data)} records)")
         
@@ -188,7 +188,7 @@ def zz0_realizedvol_idiovol3f_returnskew3f():
         returnskew3f_data = monthly_stats[['permno', 'time_avail_m', 'ReturnSkew3F']].copy()
         returnskew3f_data = returnskew3f_data.dropna(subset=['ReturnSkew3F'])
         returnskew3f_data['yyyymm'] = returnskew3f_data['time_avail_m'].dt.year * 100 + returnskew3f_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "ReturnSkew3F.csv"
+        csv_output_path = predictors_dir / "returnskew3f.csv"
         returnskew3f_data[['permno', 'yyyymm', 'ReturnSkew3F']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved ReturnSkew3F predictor to: {csv_output_path} ({len(returnskew3f_data)} records)")
         

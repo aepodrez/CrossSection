@@ -64,8 +64,14 @@ def patentsrd():
         compustat_data['time_avail_m'] = pd.to_datetime(compustat_data['time_avail_m'])
         
         # Merge with Compustat data
-        data = data.merge(compustat_data, on=['permno', 'time_avail_m'], how='left')
+        # Since both datasets have gvkey, we need to handle the column conflict
+        data = data.merge(compustat_data, on=['permno', 'time_avail_m'], how='left', suffixes=('', '_compustat'))
         logger.info(f"After merging with Compustat data: {len(data)} records")
+        
+        # If gvkey_compustat exists, use it instead of gvkey (Compustat gvkey is more reliable)
+        if 'gvkey_compustat' in data.columns:
+            data['gvkey'] = data['gvkey_compustat']
+            data = data.drop('gvkey_compustat', axis=1)
         
         # Drop if gvkey is missing (equivalent to Stata's "drop if gvkey == .")
         data = data.dropna(subset=['gvkey'])
@@ -203,7 +209,7 @@ def patentsrd():
         output_data['yyyymm'] = output_data['time_avail_m'].dt.year * 100 + output_data['time_avail_m'].dt.month
         
         # Save CSV file
-        csv_output_path = predictors_dir / "PatentsRD.csv"
+        csv_output_path = predictors_dir / "patentsrd.csv"
         csv_data = output_data[['permno', 'yyyymm', 'PatentsRD']].copy()
         csv_data.to_csv(csv_output_path, index=False)
         logger.info(f"Saved PatentsRD predictor to: {csv_output_path}")
