@@ -89,6 +89,9 @@ def zz1_rivolspread():
         # Drop missing secid observations
         data = data.dropna(subset=['secid'])
         
+        # Convert time_avail_m to datetime for consistent merging
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        
         # Merge with cleaned OptionMetrics data
         logger.info("Merging with OptionMetrics data")
         data = data.merge(option_data_clean, on=['secid', 'time_avail_m'], how='inner')

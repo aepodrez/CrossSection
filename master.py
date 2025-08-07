@@ -235,6 +235,145 @@ def check_predictor_output_file(func_name):
             return output_files[0]
         return None
     
+    elif func_name == "zz1_analystvalue_aop_predictedfe_intrinsicvalue":
+        # This function creates four separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "analystvalue.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "aop.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "predictedfe.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "intrinsicvalue.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_ebm_bpebm":
+        # This function creates two separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "ebm.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "bpebm.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_fr_frbook":
+        # This function creates files in both Predictors and Placebos directories
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "fr.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Placebos" / "FRbook.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_intanbm_intansp_intancfp_intanep":
+        # This function creates four separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "intanbm.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "intansp.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "intancfp.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "intanep.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_optionvolume1_optionvolume2":
+        # This function creates two separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "optionvolume1.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "optionvolume2.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_orgcap_orgcapnoadj":
+        # This function creates files in both Predictors and Placebos directories
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "OrgCap.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Placebos" / "OrgCapNoAdj.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_rio_mb_rio_disp_rio_turnover_rio_volatility":
+        # This function creates four separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "rio_mb.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "rio_disp.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "rio_turnover.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "rio_volatility.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_residualmomentum6m_residualmomentum":
+        # This function creates two separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "ResidualMomentum6m.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "ResidualMomentum.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_grcapx_grcapx1y_grcapx3y":
+        # This function creates three separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "grcapx.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "grcapx1y.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "grcapx3y.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz1_zerotrade_zerotradealt1_zerotradealt12":
+        # This function creates three separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "zerotrade1M.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "zerotrade6M.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "zerotrade12M.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz2_abnormalaccruals_abnormalaccrualspercent":
+        # This function creates two separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "abnormalaccruals.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "abnormalaccrualspercent.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz2_announcementreturn":
+        # This function creates a file with a different name than the function
+        output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "announcementreturn.csv"
+        return output_file if output_file.exists() else None
+    
+    elif func_name == "zz2_betafp":
+        # This function creates a file with a different name than the function
+        output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "betafp.csv"
+        return output_file if output_file.exists() else None
+    
     # Default case: single output file with function name
     output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / f"{func_name}.csv"
     return output_file

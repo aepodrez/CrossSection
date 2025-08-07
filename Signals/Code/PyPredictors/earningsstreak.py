@@ -111,7 +111,11 @@ def earningsstreak():
         
         # Drop stale data (equivalent to Stata's "drop if time_avail_m - mofd(anndats_act) > 6")
         merged_data['anndats_act_m'] = pd.to_datetime(merged_data['anndats_act']).dt.to_period('M')
-        merged_data['months_diff'] = merged_data['time_avail_m'].astype(int) - merged_data['anndats_act_m'].astype(int)
+        
+        # Convert time_avail_m string to numeric representation for comparison
+        merged_data['time_avail_m_numeric'] = pd.to_datetime(merged_data['time_avail_m']).dt.to_period('M').astype(int)
+        merged_data['anndats_act_m_numeric'] = merged_data['anndats_act_m'].astype(int)
+        merged_data['months_diff'] = merged_data['time_avail_m_numeric'] - merged_data['anndats_act_m_numeric']
         merged_data = merged_data[merged_data['months_diff'] <= 6]
         logger.info(f"After dropping stale data: {len(merged_data)} observations")
         

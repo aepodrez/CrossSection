@@ -282,7 +282,7 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
             analystvalue_data['time_avail_m'] = pd.to_datetime(analystvalue_data['time_avail_m'])
         
         analystvalue_data['yyyymm'] = analystvalue_data['time_avail_m'].dt.year * 100 + analystvalue_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "AnalystValue.csv"
+        csv_output_path = predictors_dir / "analystvalue.csv"
         analystvalue_data[['permno', 'yyyymm', 'AnalystValue']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved AnalystValue predictor to: {csv_output_path}")
         
@@ -294,7 +294,7 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
             aop_data['time_avail_m'] = pd.to_datetime(aop_data['time_avail_m'])
         
         aop_data['yyyymm'] = aop_data['time_avail_m'].dt.year * 100 + aop_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "AOP.csv"
+        csv_output_path = predictors_dir / "aop.csv"
         aop_data[['permno', 'yyyymm', 'AOP']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved AOP predictor to: {csv_output_path}")
         
@@ -306,7 +306,7 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
             predictedfe_data['time_avail_m'] = pd.to_datetime(predictedfe_data['time_avail_m'])
         
         predictedfe_data['yyyymm'] = predictedfe_data['time_avail_m'].dt.year * 100 + predictedfe_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "PredictedFE.csv"
+        csv_output_path = predictors_dir / "predictedfe.csv"
         predictedfe_data[['permno', 'yyyymm', 'PredictedFE']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved PredictedFE predictor to: {csv_output_path}")
         
@@ -318,7 +318,7 @@ def zz1_analystvalue_aop_predictedfe_intrinsicvalue():
             intrinsicvalue_data['time_avail_m'] = pd.to_datetime(intrinsicvalue_data['time_avail_m'])
         
         intrinsicvalue_data['yyyymm'] = intrinsicvalue_data['time_avail_m'].dt.year * 100 + intrinsicvalue_data['time_avail_m'].dt.month
-        csv_output_path = predictors_dir / "IntrinsicValue.csv"
+        csv_output_path = predictors_dir / "intrinsicvalue.csv"
         intrinsicvalue_data[['permno', 'yyyymm', 'IntrinsicValue']].to_csv(csv_output_path, index=False)
         logger.info(f"Saved IntrinsicValue placebo to: {csv_output_path}")
         
