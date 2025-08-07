@@ -64,6 +64,8 @@ def zz1_rivolspread():
         
         # Keep only necessary columns
         option_data_clean = option_data_wide[['secid', 'time_avail_m', 'impvol']].copy()
+        # Convert time_avail_m to datetime for consistent merging
+        option_data_clean['time_avail_m'] = pd.to_datetime(option_data_clean['time_avail_m'])
         option_data_clean.to_csv(temp_path, index=False)
         
         # Clean Realized vol data

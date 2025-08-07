@@ -374,6 +374,39 @@ def check_predictor_output_file(func_name):
         output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "betafp.csv"
         return output_file if output_file.exists() else None
     
+    elif func_name == "zz1_activism1_activism2":
+        # This function creates two separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "activism1.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "activism2.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
+    elif func_name == "zz2_betavix":
+        # This function creates a file with a different name than the function
+        output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "BetaVIX.csv"
+        return output_file if output_file.exists() else None
+    
+    elif func_name == "zz2_idiovolaht":
+        # This function creates a single file
+        output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "idiovolaht.csv"
+        return output_file if output_file.exists() else None
+    
+    elif func_name == "zz2_pricedelayslope_pricedelayrsq_pricedelaytstat":
+        # This function creates three separate files
+        output_files = [
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "pricedelayslope.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "pricedelayrsq.csv",
+            Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "pricedelaytstat.csv"
+        ]
+        # Return the first file if all exist, otherwise None
+        if all(f.exists() for f in output_files):
+            return output_files[0]
+        return None
+    
     # Default case: single output file with function name
     output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / f"{func_name}.csv"
     return output_file
