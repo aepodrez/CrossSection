@@ -407,6 +407,11 @@ def check_predictor_output_file(func_name):
             return output_files[0]
         return None
     
+    elif func_name == "zz1_rivolspread":
+        # This function creates a file with a different name than the function
+        output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / "RIVolSpread.csv"
+        return output_file if output_file.exists() else None
+    
     # Default case: single output file with function name
     output_file = Path(PROJECT_PATH) / "Signals" / "Data" / "Predictors" / f"{func_name}.csv"
     return output_file

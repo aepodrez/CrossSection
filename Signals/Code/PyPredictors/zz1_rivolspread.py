@@ -40,6 +40,9 @@ def zz1_rivolspread():
         logger.info("Cleaning OptionMetrics data")
         option_data = pd.read_csv(optionmetrics_path)
         
+        # Convert time_avail_m to datetime immediately after loading
+        option_data['time_avail_m'] = pd.to_datetime(option_data['time_avail_m'], errors='coerce')
+        
         # Rename mean_imp_vol to impvol
         option_data = option_data.rename(columns={'mean_imp_vol': 'impvol'})
         
@@ -62,11 +65,13 @@ def zz1_rivolspread():
         option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolC'].notna(), 'impvol'] = option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolC'].notna(), 'impvolC']
         option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolP'].notna(), 'impvol'] = option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolP'].notna(), 'impvolP']
         
-        # Convert time_avail_m to datetime in option_data_wide
-        option_data_wide['time_avail_m'] = pd.to_datetime(option_data_wide['time_avail_m'])
-        
         # Keep only necessary columns
         option_data_clean = option_data_wide[['secid', 'time_avail_m', 'impvol']].copy()
+        
+        # Debug: Check data types
+        logger.info(f"option_data_clean['time_avail_m'] dtype: {option_data_clean['time_avail_m'].dtype}")
+        logger.info(f"option_data_clean['time_avail_m'] sample: {option_data_clean['time_avail_m'].head()}")
+        
         option_data_clean.to_csv(temp_path, index=False)
         
         # Clean Realized vol data
@@ -79,6 +84,10 @@ def zz1_rivolspread():
             realizedvol_data['yyyymm'].astype(str).str[4:6] + '-01'
         )
         realizedvol_data = realizedvol_data.drop('yyyymm', axis=1)
+        
+        # Debug: Check data types
+        logger.info(f"realizedvol_data['time_avail_m'] dtype: {realizedvol_data['time_avail_m'].dtype}")
+        logger.info(f"realizedvol_data['time_avail_m'] sample: {realizedvol_data['time_avail_m'].head()}")
         
         # Annualize realized volatility (multiply by sqrt(252))
         realizedvol_data['RealizedVol'] = realizedvol_data['RealizedVol'] * np.sqrt(252)
@@ -93,7 +102,11 @@ def zz1_rivolspread():
         data = data.dropna(subset=['secid'])
         
         # Convert time_avail_m to datetime for consistent merging
-        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'])
+        data['time_avail_m'] = pd.to_datetime(data['time_avail_m'], errors='coerce')
+        
+        # Debug: Check data types
+        logger.info(f"data['time_avail_m'] dtype: {data['time_avail_m'].dtype}")
+        logger.info(f"data['time_avail_m'] sample: {data['time_avail_m'].head()}")
         
         # Merge with cleaned OptionMetrics data
         logger.info("Merging with OptionMetrics data")
