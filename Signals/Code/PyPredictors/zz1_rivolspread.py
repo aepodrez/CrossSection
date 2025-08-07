@@ -62,10 +62,11 @@ def zz1_rivolspread():
         option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolC'].notna(), 'impvol'] = option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolC'].notna(), 'impvolC']
         option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolP'].notna(), 'impvol'] = option_data_wide.loc[option_data_wide['impvol'].isna() & option_data_wide['impvolP'].notna(), 'impvolP']
         
+        # Convert time_avail_m to datetime in option_data_wide
+        option_data_wide['time_avail_m'] = pd.to_datetime(option_data_wide['time_avail_m'])
+        
         # Keep only necessary columns
         option_data_clean = option_data_wide[['secid', 'time_avail_m', 'impvol']].copy()
-        # Convert time_avail_m to datetime for consistent merging
-        option_data_clean['time_avail_m'] = pd.to_datetime(option_data_clean['time_avail_m'])
         option_data_clean.to_csv(temp_path, index=False)
         
         # Clean Realized vol data
