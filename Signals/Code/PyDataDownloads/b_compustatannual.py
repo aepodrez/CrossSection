@@ -129,10 +129,16 @@ def b_compustatannual(wrds_conn=None):
             logger.info(f"After merging with linking table: {len(data)} records")
             
             # Use only if data date is within the validity period of the link (exactly as in Stata)
-            data['temp'] = ((data['timeLinkStart_d'] <= data['datadate']) & 
-                           (data['datadate'] <= data['timeLinkEnd_d']))
-            # Convert to boolean explicitly to avoid ambiguity
-            data['temp'] = data['temp'].astype(bool)
+            # Handle NaT values in timeLinkEnd_d (missing end date means link is still active)
+            data['timeLinkStart_d'] = pd.to_datetime(data['timeLinkStart_d'])
+            data['timeLinkEnd_d'] = pd.to_datetime(data['timeLinkEnd_d'])
+            data['datadate'] = pd.to_datetime(data['datadate'])
+            
+            # Create validity condition: start <= datadate AND (end >= datadate OR end is missing)
+            start_condition = data['timeLinkStart_d'] <= data['datadate']
+            end_condition = (data['datadate'] <= data['timeLinkEnd_d']) | data['timeLinkEnd_d'].isna()
+            data['temp'] = start_condition & end_condition
+            
             data = data[data['temp'] == True]
             data = data.drop('temp', axis=1)
             logger.info(f"After filtering by link validity: {len(data)} records")
