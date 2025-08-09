@@ -4,6 +4,7 @@
 # CREDENTIALS AND SECRETS
 # ============================================================
 secrets.py
+conn_secrets.py
 *.key
 *.pem
 *.p12
