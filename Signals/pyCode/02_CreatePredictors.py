@@ -6,11 +6,13 @@ ABOUTME: Executes SignalMasterTable.py then runs all predictor scripts in alphab
 This script replicates the Stata 02_CreatePredictors.do workflow:
 1. Creates SignalMasterTable.parquet by running SignalMasterTable.py
 2. Finds all .py files in Predictors/ directory
-3. Executes each predictor script in alphabetical order with timing
-4. Tracks execution results in flags file
+3. Skips predictors that already have output CSV files (unless --force is used)
+4. Executes each remaining predictor script in alphabetical order with timing
+5. Tracks execution results in flags file
 
 Usage:
-  python3 02_CreatePredictors.py
+  python3 02_CreatePredictors.py           # Skip predictors with existing outputs
+  python3 02_CreatePredictors.py --force   # Re-run all predictors regardless
 
 Inputs:
   - SignalMasterTable.py (creates SignalMasterTable.parquet)
@@ -29,6 +31,7 @@ import time
 import subprocess
 import threading
 import pandas as pd
+import argparse
 from pathlib import Path
 from datetime import datetime
 from config import SCRIPT_TIMEOUT_MINUTES
@@ -133,13 +136,14 @@ def execute_signalmaster_table(console_log):
     
     return return_code, execution_time, console_log
 
-def find_predictor_scripts():
-    """Find all .py files in Predictors/ directory (equivalent to filelist)"""
+def find_predictor_scripts(force_rerun=False):
+    """Find all .py files in Predictors/ directory and check for existing outputs"""
     predictors_dir = Path("Predictors")
+    output_dir = Path("../pyData/Predictors")
     
     if not predictors_dir.exists():
         print(f"ERROR: {predictors_dir} directory not found")
-        return []
+        return [], []
     
     # Find all .py files, excluding __pycache__ and system files
     py_files = []
@@ -150,11 +154,39 @@ def find_predictor_scripts():
     # Sort alphabetically (like Stata's sort filenameLower)
     py_files.sort()
     
-    print(f"Found {len(py_files)} predictor scripts:")
-    for file in py_files:
-        print(f"  - {file}")
+    # Check which predictors already have output files
+    scripts_to_run = []
+    scripts_to_skip = []
     
-    return py_files
+    for script_name in py_files:
+        # Determine expected output file name (script name without .py + .csv)
+        predictor_name = script_name.replace('.py', '')
+        expected_output = output_dir / f"{predictor_name}.csv"
+        
+        if force_rerun or not expected_output.exists():
+            scripts_to_run.append(script_name)
+        else:
+            scripts_to_skip.append(script_name)
+    
+    print(f"Found {len(py_files)} total predictor scripts:")
+    print(f"  - {len(scripts_to_run)} to run (no output file)")
+    print(f"  - {len(scripts_to_skip)} to skip (output exists)")
+    
+    if scripts_to_skip:
+        print(f"\nSkipping predictors with existing outputs:")
+        for file in scripts_to_skip[:10]:  # Show first 10
+            print(f"  ✓ {file}")
+        if len(scripts_to_skip) > 10:
+            print(f"  ... and {len(scripts_to_skip) - 10} more")
+    
+    if scripts_to_run:
+        print(f"\nWill run predictors without outputs:")
+        for file in scripts_to_run[:10]:  # Show first 10
+            print(f"  ⏳ {file}")
+        if len(scripts_to_run) > 10:
+            print(f"  ... and {len(scripts_to_run) - 10} more")
+    
+    return scripts_to_run, scripts_to_skip
 
 def execute_predictor_script(script_name, error_log, console_log):
     """Execute a single predictor script and track results with configurable timeout"""
@@ -312,8 +344,16 @@ def save_error_log(error_log, console_log):
 
 def main():
     """Main function mimicking 02_CreatePredictors.do logic"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Create Predictors Script - Python equivalent of 02_CreatePredictors.do')
+    parser.add_argument('--force', action='store_true', 
+                       help='Force re-run all predictors even if output files exist')
+    args = parser.parse_args()
+    
     print("=" * 60)
     print("Create Predictors Script - Python equivalent of 02_CreatePredictors.do")
+    if args.force:
+        print("FORCE MODE: Will re-run all predictors regardless of existing outputs")
     print("=" * 60)
     
     # Setup logging
@@ -331,19 +371,24 @@ def main():
     
     # Step 2: Find all predictor scripts
     print("\nStep 2: Finding predictor scripts...")
-    predictor_scripts = find_predictor_scripts()
+    scripts_to_run, scripts_to_skip = find_predictor_scripts(force_rerun=args.force)
     
-    if not predictor_scripts:
+    if not scripts_to_run and not scripts_to_skip:
         print("No predictor scripts found in Predictors/")
         save_error_log(error_log, console_log)
         return
     
+    if not scripts_to_run:
+        print("All predictor outputs already exist. Nothing to run!")
+        save_error_log(error_log, console_log)
+        return
+    
     # Step 3: Execute each predictor script (equivalent to Stata's forvalues loop)
-    print(f"\nStep 3: Executing {len(predictor_scripts)} predictor scripts...")
+    print(f"\nStep 3: Executing {len(scripts_to_run)} predictor scripts...")
     
     failed_scripts = []
     
-    for script in predictor_scripts:
+    for script in scripts_to_run:
         error_log, return_code, console_log = execute_predictor_script(script, error_log, console_log)
         
         if return_code != 0:
@@ -357,10 +402,14 @@ def main():
     print("PREDICTOR CREATION SUMMARY")
     print("=" * 60)
     
-    total_scripts = len(predictor_scripts)
-    successful_scripts = total_scripts - len(failed_scripts)
+    total_scripts_found = len(scripts_to_run) + len(scripts_to_skip)
+    scripts_run = len(scripts_to_run)
+    scripts_skipped = len(scripts_to_skip)
+    successful_scripts = scripts_run - len(failed_scripts)
     
-    print(f"Total scripts: {total_scripts}")
+    print(f"Total scripts found: {total_scripts_found}")
+    print(f"Scripts run: {scripts_run}")
+    print(f"Scripts skipped (output exists): {scripts_skipped}")
     print(f"Successful: {successful_scripts}")
     print(f"Failed: {len(failed_scripts)}")
     
@@ -370,7 +419,10 @@ def main():
             print(f"  ✗ {script}")
         print(f"\nCheck {Path('../Logs/02_CreatePredictorsFlags.csv').absolute()} for details")
     else:
-        print("\n✓ All predictor scripts completed successfully!")
+        if scripts_run > 0:
+            print("\n✓ All executed predictor scripts completed successfully!")
+        if scripts_skipped > 0:
+            print(f"✓ {scripts_skipped} predictors were skipped (outputs already exist)")
     
     print("=" * 60)
 
