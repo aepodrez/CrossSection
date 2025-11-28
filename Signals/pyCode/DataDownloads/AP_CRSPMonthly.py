@@ -48,9 +48,9 @@ print("=" * 70, flush=True)
 # CONFIGURATION
 # =============================================================================
 
-# Date range for download
-START_DATE = '2000-01-01'  # yfinance typically has data from 2000+
+# Date range for download - Last 2 years
 END_DATE = datetime.now().strftime('%Y-%m-%d')
+START_DATE = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')  # 2 years ago
 
 # Debug mode: download limited tickers and date range
 DEBUG_MODE = False  # Set to True for testing with small dataset
@@ -70,17 +70,17 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # TICKER LISTS & MAPPINGS
 # =============================================================================
 
-def get_sp500_tickers():
-    """Get current S&P 500 ticker list from Wikipedia"""
+def load_sp500_universe():
+    """Load S&P 500 ticker universe from pickle file"""
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
     try:
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        df = tables[0]
-        tickers = df['Symbol'].str.replace('.', '-', regex=False).tolist()
-        print(f"✓ Retrieved {len(tickers)} S&P 500 tickers")
+        with open(universe_path, 'rb') as f:
+            tickers = pickle.load(f)
+        print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
         return tickers
     except Exception as e:
-        print(f"⚠️  Could not fetch S&P 500 list: {e}")
+        print(f"⚠️  Could not load sp500_universe.pkl: {e}")
         return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ',
                 'WMT', 'PG', 'UNH', 'MA', 'HD', 'DIS', 'BAC', 'ADBE', 'NFLX', 'CMCSA']
 
@@ -94,7 +94,7 @@ def get_user_ticker_list():
         elif 'symbol' in df.columns:
             return df['symbol'].tolist()
     
-    return get_sp500_tickers()
+    return load_sp500_universe()
 
 def create_ticker_mappings(tickers):
     """
@@ -262,28 +262,36 @@ def download_ticker_monthly(ticker, start_date, end_date, permno, permco):
         hist['ret'] = adj_close_ret  # Total return
         hist['retx'] = close_ret  # Approximate ex-dividend return
         
+        # Get SIC code (handle NaN properly)
+        sic_code = map_industry_to_sic(industry, sector)
+        if pd.isna(sic_code):
+            sic_code = -1  # Use -1 for unknown instead of NaN
+        
         # Prepare CRSP-like dataframe
+        # Use list comprehension to ensure all columns have same length
+        n_rows = len(hist)
         df = pd.DataFrame({
-            'permno': permno,
-            'permco': permco,
+            'permno': [permno] * n_rows,
+            'permco': [permco] * n_rows,
             'time_avail_m': hist.index,
-            'ret': hist['ret'],
-            'retx': hist['retx'],
-            'vol': hist['Volume'] / 10000,  # Convert to 100s of shares (CRSP convention)
-            'shrout': shares_outstanding_m,  # In millions
-            'prc': hist['Close'],
-            'cfacshr': 1.0,  # yfinance provides adjusted prices
-            'bidlo': hist['Low'],  # Approximate bid low with monthly low
-            'askhi': hist['High'],  # Approximate ask high with monthly high
-            'shrcd': get_share_code(quote_type),
-            'exchcd': get_exchange_code(exchange),
-            'sicCRSP': map_industry_to_sic(industry, sector),
-            'ticker': ticker,
-            'shrcls': ticker.split('.')[-1] if '.' in ticker else '',
+            'ret': hist['ret'].values,
+            'retx': hist['retx'].values,
+            'vol': (hist['Volume'] / 10000).values,  # Convert to 100s of shares (CRSP convention)
+            'shrout': [shares_outstanding_m] * n_rows,  # In millions
+            'prc': hist['Close'].values,
+            'cfacshr': [1.0] * n_rows,  # yfinance provides adjusted prices
+            'bidlo': hist['Low'].values,  # Approximate bid low with monthly low
+            'askhi': hist['High'].values,  # Approximate ask high with monthly high
+            'shrcd': [get_share_code(quote_type)] * n_rows,
+            'exchcd': [get_exchange_code(exchange)] * n_rows,
+            'sicCRSP': [sic_code] * n_rows,
+            'ticker': [ticker] * n_rows,
+            'shrcls': [ticker.split('.')[-1] if '.' in ticker else ''] * n_rows,
         })
         
-        # Calculate 2-digit SIC
-        df['sic2D'] = (df['sicCRSP'] / 100).astype('Int64')
+        # Calculate 2-digit SIC (handle NaN and non-numeric values)
+        df['sic2D'] = pd.to_numeric(df['sicCRSP'], errors='coerce') / 100
+        df['sic2D'] = df['sic2D'].astype('Int64')
         
         # Calculate market value of equity (millions)
         df['mve_c'] = df['shrout'] * np.abs(df['prc'])
@@ -354,24 +362,25 @@ def process_monthly_data(all_data):
     print(f"  Total records: {len(combined):,}")
     
     # Ensure correct data types (matching CRSP format)
-    combined['permno'] = combined['permno'].astype('Int64')
-    combined['permco'] = combined['permco'].astype('Int64')
+    # Use pd.to_numeric with errors='coerce' to handle non-numeric values
+    combined['permno'] = pd.to_numeric(combined['permno'], errors='coerce').astype('Int64')
+    combined['permco'] = pd.to_numeric(combined['permco'], errors='coerce').astype('Int64')
     combined['time_avail_m'] = pd.to_datetime(combined['time_avail_m'])
-    combined['ret'] = combined['ret'].astype('float32')
-    combined['retx'] = combined['retx'].astype('float32')
-    combined['vol'] = combined['vol'].astype('float64')
-    combined['shrout'] = combined['shrout'].astype('float32')
-    combined['prc'] = combined['prc'].astype('float32')
-    combined['cfacshr'] = combined['cfacshr'].astype('float32')
-    combined['bidlo'] = combined['bidlo'].astype('float32')
-    combined['askhi'] = combined['askhi'].astype('float32')
-    combined['shrcd'] = combined['shrcd'].astype('Int64')
-    combined['exchcd'] = combined['exchcd'].astype('Int64')
-    combined['sicCRSP'] = combined['sicCRSP'].astype('Int64')
-    combined['sic2D'] = combined['sic2D'].astype('Int64')
-    combined['mve_c'] = combined['mve_c'].astype('float32')
-    combined['mve_permco'] = combined['mve_permco'].astype('float32')
-    combined['ret_b4_dl'] = combined['ret_b4_dl'].astype('float32')
+    combined['ret'] = pd.to_numeric(combined['ret'], errors='coerce').astype('float32')
+    combined['retx'] = pd.to_numeric(combined['retx'], errors='coerce').astype('float32')
+    combined['vol'] = pd.to_numeric(combined['vol'], errors='coerce').astype('float64')
+    combined['shrout'] = pd.to_numeric(combined['shrout'], errors='coerce').astype('float32')
+    combined['prc'] = pd.to_numeric(combined['prc'], errors='coerce').astype('float32')
+    combined['cfacshr'] = pd.to_numeric(combined['cfacshr'], errors='coerce').astype('float32')
+    combined['bidlo'] = pd.to_numeric(combined['bidlo'], errors='coerce').astype('float32')
+    combined['askhi'] = pd.to_numeric(combined['askhi'], errors='coerce').astype('float32')
+    combined['shrcd'] = pd.to_numeric(combined['shrcd'], errors='coerce').astype('Int64')
+    combined['exchcd'] = pd.to_numeric(combined['exchcd'], errors='coerce').astype('Int64')
+    combined['sicCRSP'] = pd.to_numeric(combined['sicCRSP'], errors='coerce').astype('Int64')
+    combined['sic2D'] = pd.to_numeric(combined['sic2D'], errors='coerce').astype('Int64')
+    combined['mve_c'] = pd.to_numeric(combined['mve_c'], errors='coerce').astype('float32')
+    combined['mve_permco'] = pd.to_numeric(combined['mve_permco'], errors='coerce').astype('float32')
+    combined['ret_b4_dl'] = pd.to_numeric(combined['ret_b4_dl'], errors='coerce').astype('float32')
     
     # Handle string columns (fillna with empty string to match CRSP)
     combined['ticker'] = combined['ticker'].fillna('')

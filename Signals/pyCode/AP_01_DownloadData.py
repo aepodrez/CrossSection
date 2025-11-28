@@ -108,7 +108,12 @@ def execute_script(script_name, error_log, console_log):
         )
         
         # Set up configurable timeout (convert minutes to seconds)
-        timeout_seconds = SCRIPT_TIMEOUT_MINUTES * 60
+        # Special timeout for AP_CRSPAcquisitions.py: 5 hours (300 minutes)
+        if script_name == "AP_CRSPAcquisitions.py":
+            timeout_minutes = 300  # 5 hours
+        else:
+            timeout_minutes = SCRIPT_TIMEOUT_MINUTES
+        timeout_seconds = timeout_minutes * 60
         timer = threading.Timer(timeout_seconds, timeout_handler)
         timer.start()
         
@@ -128,7 +133,9 @@ def execute_script(script_name, error_log, console_log):
         
         if timed_out:
             return_code = -9  # SIGKILL return code
-            timeout_msg = f"⏱️ TIMEOUT in {script_name}: Script exceeded {SCRIPT_TIMEOUT_MINUTES} minutes"
+            # Use the actual timeout that was set for this script
+            actual_timeout = 300 if script_name == "AP_CRSPAcquisitions.py" else SCRIPT_TIMEOUT_MINUTES
+            timeout_msg = f"⏱️ TIMEOUT in {script_name}: Script exceeded {actual_timeout} minutes"
             print(separator)
             print(timeout_msg)
             
@@ -136,7 +143,7 @@ def execute_script(script_name, error_log, console_log):
             console_log.extend(script_output)
             console_log.append(separator)
             console_log.append(timeout_msg)
-            console_log.append(f"Script was terminated due to {SCRIPT_TIMEOUT_MINUTES}-minute timeout")
+            console_log.append(f"Script was terminated due to {actual_timeout}-minute timeout")
             
         elif process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, [sys.executable, str(script_path)])

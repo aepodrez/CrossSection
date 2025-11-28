@@ -28,6 +28,8 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict
+from io import StringIO
+import time
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -67,22 +69,45 @@ def download_finra_short_interest(date: str) -> Optional[pd.DataFrame]:
     
     url = f"https://cdn.finra.org/equity/regsho/daily/{date}/CNMSshvol{date}.txt"
     
-    # FINRA requires proper User-Agent header to avoid 403 errors
+    # FINRA requires proper headers and may have tightened bot detection
+    # Use a more recent User-Agent and additional headers to mimic browser behavior
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.finra.org/'
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': 'https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data',
+        'Origin': 'https://www.finra.org',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-site',
+        'Cache-Control': 'max-age=0'
     }
+    
+    # Use a session to maintain cookies
+    session = requests.Session()
+    session.headers.update(headers)
     
     try:
         print(f"  Downloading FINRA data for {date}...", flush=True)
-        response = requests.get(url, headers=headers, timeout=30)
+        
+        # First, try to access the main FINRA page to establish session
+        try:
+            session.get('https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data', timeout=10)
+        except:
+            pass  # Continue even if this fails
+        
+        # Add small delay to avoid rate limiting
+        time.sleep(0.5)
+        
+        response = session.get(url, timeout=30)
         response.raise_for_status()
         
-        # FINRA files are pipe-delimited
+        # Read from response content instead of URL to avoid double request
         df = pd.read_csv(
-            url,
+            StringIO(response.text),
             sep='|',
             skiprows=1,  # Skip header row
             header=0,

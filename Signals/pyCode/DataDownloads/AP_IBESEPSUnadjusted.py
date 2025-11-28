@@ -27,7 +27,7 @@ Notes:
 import os
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 import warnings
@@ -54,8 +54,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # CONFIGURATION
 # =============================================================================
 
-START_DATE = "2020-01-01"
+# Date range - Last 2 years
 END_DATE = datetime.now().strftime("%Y-%m-%d")
+START_DATE = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")  # 2 years ago
 
 DEBUG_MODE = False
 

@@ -48,9 +48,9 @@ print("=" * 70, flush=True)
 # CONFIGURATION
 # =============================================================================
 
-# Date range for download
-START_DATE = '2000-01-01'  # yfinance typically has data from 2000+
+# Date range for download - Last 2 years
 END_DATE = datetime.now().strftime('%Y-%m-%d')
+START_DATE = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')  # 2 years ago
 
 # Debug mode: download limited tickers and date range
 DEBUG_MODE = False  # Set to True for testing with small dataset
@@ -70,18 +70,17 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # TICKER LISTS
 # =============================================================================
 
-def get_sp500_tickers():
-    """Get current S&P 500 ticker list from Wikipedia"""
+def load_sp500_universe():
+    """Load S&P 500 ticker universe from pickle file"""
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
     try:
-        import pandas as pd
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        df = tables[0]
-        tickers = df['Symbol'].str.replace('.', '-', regex=False).tolist()
-        print(f"✓ Retrieved {len(tickers)} S&P 500 tickers")
+        with open(universe_path, 'rb') as f:
+            tickers = pickle.load(f)
+        print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
         return tickers
     except Exception as e:
-        print(f"⚠️  Could not fetch S&P 500 list: {e}")
+        print(f"⚠️  Could not load sp500_universe.pkl: {e}")
         # Fallback to a small list of major stocks
         return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ',
                 'WMT', 'PG', 'UNH', 'MA', 'HD', 'DIS', 'BAC', 'ADBE', 'NFLX', 'CMCSA']
@@ -92,7 +91,7 @@ def get_user_ticker_list():
     Options:
     1. Hard-code tickers
     2. Read from CSV file
-    3. Use S&P 500 (default)
+    3. Use S&P 500 from pickle file (default)
     """
     # Option 1: Hard-coded list (for specific universe)
     # return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
@@ -106,8 +105,8 @@ def get_user_ticker_list():
         elif 'symbol' in df.columns:
             return df['symbol'].tolist()
     
-    # Option 3: Default to S&P 500
-    return get_sp500_tickers()
+    # Option 3: Default to S&P 500 from pickle file
+    return load_sp500_universe()
 
 # =============================================================================
 # DATA DOWNLOAD FUNCTIONS

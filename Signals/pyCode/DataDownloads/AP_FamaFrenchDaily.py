@@ -22,7 +22,11 @@ Notes:
 
 import os
 import sys
+import subprocess
 import datetime as dt
+from datetime import timedelta
+from pathlib import Path
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -53,9 +57,10 @@ load_dotenv()
 
 PORTFOLIO_FILE = "../pyData/Static/ff3_portfolios.csv"
 OUTPUT_FILE = "../pyData/Intermediate/dailyFF.parquet"
+PORTFOLIO_SCRIPT = "AP_BuildFFPortfolios.py"
 
-# How far back to build history if OUTPUT_FILE doesn't exist yet
-DEFAULT_START_DATE = "2015-01-01"
+# How far back to build history if OUTPUT_FILE doesn't exist yet - Last 2 years
+DEFAULT_START_DATE = (dt.date.today() - timedelta(days=730)).strftime('%Y-%m-%d')  # 2 years ago
 
 # If you want to limit rows for debugging (similar to WRDS script)
 ROW_LIMIT = MAX_ROWS_DL if MAX_ROWS_DL and MAX_ROWS_DL > 0 else None
@@ -75,7 +80,7 @@ def load_portfolio_assignments(path: str) -> pd.DataFrame:
     return df
 
 
-def determine_date_range(output_path: str, default_start: str) -> tuple[dt.date, dt.date]:
+def determine_date_range(output_path: str, default_start: str) -> Tuple[dt.date, dt.date]:
     """Figure out [start, end] dates we still need to compute."""
     today = dt.date.today()
     # We want to include yesterday's close at minimum
@@ -311,10 +316,80 @@ def compute_factors_for_day(day_df: pd.DataFrame, port_assign: pd.DataFrame) -> 
 
 
 # ------------------------------------------------------------------------------
+# Portfolio File Generation
+# ------------------------------------------------------------------------------
+
+def ensure_portfolio_file_exists():
+    """
+    Check if portfolio file exists and is up to date.
+    If not, run AP_BuildFFPortfolios.py to generate it.
+    """
+    portfolio_path = Path(PORTFOLIO_FILE)
+    
+    # Check if file exists
+    if not portfolio_path.exists():
+        print(f"\n📊 Portfolio file not found: {PORTFOLIO_FILE}")
+        print("   Running AP_BuildFFPortfolios.py to generate portfolio assignments...")
+        print("=" * 60, flush=True)
+        
+        # Run the portfolio script
+        script_path = Path(__file__).parent / PORTFOLIO_SCRIPT
+        if not script_path.exists():
+            raise FileNotFoundError(
+                f"Portfolio script not found: {script_path}\n"
+                f"Please ensure {PORTFOLIO_SCRIPT} exists in DataDownloads/"
+            )
+        
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script_path)],
+                cwd=Path(__file__).parent,
+                check=True,
+                capture_output=False
+            )
+            print("=" * 60, flush=True)
+            print("✓ Portfolio assignments generated successfully", flush=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to generate portfolio file. "
+                f"AP_BuildFFPortfolios.py exited with code {e.returncode}"
+            )
+    
+    # Verify the file was created and has content
+    if not portfolio_path.exists():
+        raise FileNotFoundError(
+            f"Portfolio file was not created: {PORTFOLIO_FILE}\n"
+            f"Please run {PORTFOLIO_SCRIPT} manually to generate it."
+        )
+    
+    # Check if file has valid content
+    try:
+        df = pd.read_csv(portfolio_path)
+        required_cols = {"ticker", "size_port", "bm_port", "mom_port"}
+        missing = required_cols - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"Portfolio file missing required columns: {missing}\n"
+                f"Please regenerate {PORTFOLIO_FILE} using {PORTFOLIO_SCRIPT}"
+            )
+        if len(df) == 0:
+            raise ValueError(
+                f"Portfolio file is empty: {PORTFOLIO_FILE}\n"
+                f"Please regenerate using {PORTFOLIO_SCRIPT}"
+            )
+        print(f"✓ Portfolio file found with {len(df)} tickers", flush=True)
+    except Exception as e:
+        raise ValueError(f"Invalid portfolio file: {e}")
+
+
+# ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
 
 def main():
+    # Ensure portfolio file exists before proceeding
+    ensure_portfolio_file_exists()
+    
     # Load assignments
     port_assign = load_portfolio_assignments(PORTFOLIO_FILE)
     tickers = port_assign["ticker"].unique().tolist()

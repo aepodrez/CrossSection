@@ -30,6 +30,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import warnings
+import requests
+import json
 warnings.filterwarnings('ignore')
 
 # Try to import edgartools
@@ -504,7 +506,7 @@ def diagnose_xbrl_structure(xbrl, max_items=5):
                 print(f"  [DEBUG] {stmt} has to_dataframe()")
 
 
-def get_company_financials_from_10k(ticker: str, years: int = 5, debug: bool = False) -> pd.DataFrame:
+def get_company_financials_from_10k(ticker: str, years: int = 2, debug: bool = False) -> pd.DataFrame:
     """
     Fetch 10-K filings for a company and extract financial data using edgartools API.
     
@@ -523,18 +525,24 @@ def get_company_financials_from_10k(ticker: str, years: int = 5, debug: bool = F
     try:
         print(f"Fetching 10-K data for {ticker}...", flush=True)
         
-        # Get company object
-        company = Company(ticker)
+        # Get company object (with CIK fallback)
+        company = get_company_by_ticker_or_cik_annual(ticker)
+        
+        # Check if company was found
+        if company is None:
+            print(f"  ⚠️  Company not found in SEC EDGAR for ticker {ticker} (even with CIK fallback)")
+            return pd.DataFrame()
         
         # Get recent 10-K filings (exclude amendments for cleaner data)
-        filings = company.get_filings(form='10-K', amendments=False).latest(years)
+        # Note: amendments parameter removed in newer edgartools versions
+        filings = company.get_filings(form='10-K').latest(years)
         
         results = []
         
         for filing in filings:
             try:
-                # Parse period_of_report as date
-                period_end = filing.period_of_report
+                # Parse report_date as date (EntityFiling uses report_date, not period_of_report)
+                period_end = filing.report_date
                 if isinstance(period_end, str):
                     period_end = pd.to_datetime(period_end)
                 
@@ -830,19 +838,33 @@ def main():
     Main execution function.
     """
     
-    # Example ticker list (you would expand this to full universe)
-    # For production, you'd want to:
-    # 1. Read from a file of all tickers
-    # 2. Or query all companies from EDGAR
-    # 3. Or use your existing universe from CRSP
+    # Load ticker universe from S&P 500 pickle file
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
+    SAMPLE_TICKERS = []
     
-    SAMPLE_TICKERS = [
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META',
-        'TSLA', 'NVDA', 'JPM', 'V', 'WMT',
-        'JNJ', 'PG', 'MA', 'UNH', 'HD',
-    ]
-    
-    print(f"\n📊 Processing {len(SAMPLE_TICKERS)} sample tickers...\n")
+    if universe_path.exists():
+        try:
+            with open(universe_path, 'rb') as f:
+                SAMPLE_TICKERS = pickle.load(f)
+            print(f"\n📊 Processing {len(SAMPLE_TICKERS)} tickers from sp500_universe.pkl...\n")
+        except Exception as e:
+            print(f"⚠️  Could not load sp500_universe.pkl: {e}")
+            # Fallback to sample
+            SAMPLE_TICKERS = [
+                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META',
+                'TSLA', 'NVDA', 'JPM', 'V', 'WMT',
+                'JNJ', 'PG', 'MA', 'UNH', 'HD',
+            ]
+            print(f"\n📊 Processing {len(SAMPLE_TICKERS)} sample tickers...\n")
+    else:
+        # Fallback to sample if pickle file doesn't exist
+        SAMPLE_TICKERS = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META',
+            'TSLA', 'NVDA', 'JPM', 'V', 'WMT',
+            'JNJ', 'PG', 'MA', 'UNH', 'HD',
+        ]
+        print(f"\n📊 Processing {len(SAMPLE_TICKERS)} sample tickers...\n")
     
     if not EDGARTOOLS_AVAILABLE:
         print("=" * 60)
@@ -863,7 +885,7 @@ def main():
         for i, ticker in enumerate(SAMPLE_TICKERS):
             # Enable debug for first ticker to see XBRL structure
             debug = (i == 0)
-            df = get_company_financials_from_10k(ticker, years=5, debug=debug)
+            df = get_company_financials_from_10k(ticker, years=2, debug=debug)
             if not df.empty:
                 all_data.append(df)
         

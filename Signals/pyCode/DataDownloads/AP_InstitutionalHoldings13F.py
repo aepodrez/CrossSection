@@ -52,9 +52,9 @@ print("=" * 70, flush=True)
 # CONFIGURATION
 # =============================================================================
 
-# Date range for download
-START_DATE = '2020-01-01'  # 13F data availability varies
+# Date range for download - Last 2 years
 END_DATE = datetime.now().strftime('%Y-%m-%d')
+START_DATE = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')  # 2 years ago
 
 # Debug mode: download limited tickers and filings
 DEBUG_MODE = False  # Set to True for testing
@@ -82,17 +82,17 @@ EDGAR_IDENTITY = "apodrez21@gmail.com"  # Change to your email
 # TICKER LISTS & MAPPINGS
 # =============================================================================
 
-def get_sp500_tickers():
-    """Get current S&P 500 ticker list from Wikipedia"""
+def load_sp500_universe():
+    """Load S&P 500 ticker universe from pickle file"""
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
     try:
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        df = tables[0]
-        tickers = df['Symbol'].str.replace('.', '-', regex=False).tolist()
-        print(f"✓ Retrieved {len(tickers)} S&P 500 tickers")
+        with open(universe_path, 'rb') as f:
+            tickers = pickle.load(f)
+        print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
         return tickers
     except Exception as e:
-        print(f"⚠️  Could not fetch S&P 500 list: {e}")
+        print(f"⚠️  Could not load sp500_universe.pkl: {e}")
         return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ']
 
 def get_user_ticker_list():
@@ -105,7 +105,7 @@ def get_user_ticker_list():
         elif 'symbol' in df.columns:
             return df['symbol'].tolist()
     
-    return get_sp500_tickers()
+    return load_sp500_universe()
 
 def load_ticker_to_permno_mapping():
     """Load ticker-to-permno mapping from existing files"""

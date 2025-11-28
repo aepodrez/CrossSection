@@ -32,6 +32,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import warnings
+import requests
+import json
 warnings.filterwarnings('ignore')
 
 # Try to import edgartools
@@ -370,7 +372,7 @@ def extract_xbrl_value(xbrl_data, tag_list: List[str], period_end=None) -> Optio
     return None
 
 
-def get_company_financials_from_10q(ticker: str, years: int = 5, debug: bool = False) -> pd.DataFrame:
+def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = False) -> pd.DataFrame:
     """
     Fetch 10-Q filings for a company and extract financial data using edgartools API.
     
@@ -389,19 +391,25 @@ def get_company_financials_from_10q(ticker: str, years: int = 5, debug: bool = F
     try:
         print(f"Fetching 10-Q data for {ticker}...", flush=True)
         
-        # Get company object
-        company = Company(ticker)
+        # Get company object (with CIK fallback)
+        company = get_company_by_ticker_or_cik_quarterly(ticker)
+        
+        # Check if company was found
+        if company is None:
+            print(f"  ⚠️  Company not found in SEC EDGAR for ticker {ticker} (even with CIK fallback)")
+            return pd.DataFrame()
         
         # Get recent 10-Q filings (exclude amendments for cleaner data)
         # Fetch more quarters (years * 4) to get quarterly data
-        filings = company.get_filings(form='10-Q', amendments=False).latest(years * 4)
+        # Note: amendments parameter removed in newer edgartools versions
+        filings = company.get_filings(form='10-Q').latest(years * 4)
         
         results = []
         
         for filing in filings:
             try:
-                # Parse period_of_report as date
-                period_end = filing.period_of_report
+                # Parse report_date as date (EntityFiling uses report_date, not period_of_report)
+                period_end = filing.report_date
                 if isinstance(period_end, str):
                     period_end = pd.to_datetime(period_end)
                 
@@ -587,30 +595,32 @@ def main():
     """
     
     # Define universe of tickers to fetch
-    # Option 1: Use existing AP files for universe
+    # Load from S&P 500 pickle file
     print("\n" + "="*60)
     print("📋 Loading ticker universe...")
     print("="*60)
     
     universe_tickers = []
     
-    # Try to load from AP_CRSPMonthly
-    ap_crsp_path = Path("../pyData/Intermediate/AP_monthlyCRSP.parquet")
-    if ap_crsp_path.exists():
-        print("Loading tickers from AP_monthlyCRSP.parquet...")
-        crsp_df = pd.read_parquet(ap_crsp_path, columns=['ticker'])
-        universe_tickers = crsp_df['ticker'].dropna().unique().tolist()
-        print(f"✓ Found {len(universe_tickers)} unique tickers from AP_CRSPMonthly")
+    # Load from S&P 500 pickle file
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
+    if universe_path.exists():
+        try:
+            with open(universe_path, 'rb') as f:
+                universe_tickers = pickle.load(f)
+            print(f"✓ Loaded {len(universe_tickers)} tickers from sp500_universe.pkl")
+        except Exception as e:
+            print(f"⚠️  Could not load sp500_universe.pkl: {e}")
     
-    # If no AP file, try loading from CCM linking table
+    # Fallback: Try to load from AP_CRSPMonthly
     if not universe_tickers:
-        ccm_path = Path("../pyData/Intermediate/CCMLinkingTable.parquet")
-        if ccm_path.exists():
-            print("Loading tickers from CCMLinkingTable.parquet...")
-            ccm_df = pd.read_parquet(ccm_path)
-            if 'ticker' in ccm_df.columns:
-                universe_tickers = ccm_df['ticker'].dropna().unique().tolist()
-                print(f"✓ Found {len(universe_tickers)} unique tickers from CCM linking")
+        ap_crsp_path = Path("../pyData/Intermediate/AP_monthlyCRSP.parquet")
+        if ap_crsp_path.exists():
+            print("Loading tickers from AP_monthlyCRSP.parquet...")
+            crsp_df = pd.read_parquet(ap_crsp_path, columns=['ticker'])
+            universe_tickers = crsp_df['ticker'].dropna().unique().tolist()
+            print(f"✓ Found {len(universe_tickers)} unique tickers from AP_CRSPMonthly")
     
     # If still no universe, use a sample
     if not universe_tickers:
@@ -629,7 +639,7 @@ def main():
         print(f"\n[{i}/{len(universe_tickers)}] Processing {ticker}...")
         
         # Fetch 10-Q data
-        ticker_data = get_company_financials_from_10q(ticker, years=5)
+        ticker_data = get_company_financials_from_10q(ticker, years=2)
         
         if not ticker_data.empty:
             all_data.append(ticker_data)

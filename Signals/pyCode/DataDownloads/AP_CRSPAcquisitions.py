@@ -28,6 +28,8 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import warnings
 import re
+import requests
+import json
 warnings.filterwarnings('ignore')
 
 # Try to import edgartools
@@ -257,10 +259,88 @@ def load_ticker_permno_mapping() -> pd.DataFrame:
 
 
 # =============================================================================
+# TICKER TO CIK MAPPING (FALLBACK FOR EDGARTOOLS LIMITATION)
+# =============================================================================
+
+_ticker_to_cik_cache = None
+
+def get_ticker_to_cik_mapping() -> Dict[str, str]:
+    """
+    Get ticker to CIK mapping from SEC company_tickers.json.
+    Caches the result to avoid repeated downloads.
+    """
+    global _ticker_to_cik_cache
+    
+    if _ticker_to_cik_cache is not None:
+        return _ticker_to_cik_cache
+    
+    url = "https://www.sec.gov/files/company_tickers.json"
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'AP_CRSPAcquisitions/1.0 (test@example.com)',
+        'Accept': 'application/json'
+    })
+    
+    try:
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        mapping = {}
+        items = data.items() if isinstance(data, dict) else enumerate(data)
+        
+        for _, row in items:
+            if not isinstance(row, dict):
+                continue
+            ticker = row.get("ticker", "").upper().strip()
+            cik = row.get("cik_str") or row.get("cik")
+            if not ticker or cik is None:
+                continue
+            try:
+                cik_str = str(int(cik)).zfill(10)
+                mapping[ticker] = cik_str
+            except (ValueError, TypeError):
+                continue
+        
+        _ticker_to_cik_cache = mapping
+        return mapping
+    except Exception as e:
+        print(f"⚠️  Warning: Could not load SEC ticker mapping: {e}")
+        return {}
+
+
+def get_company_by_ticker_or_cik(ticker: str) -> Optional:
+    """
+    Get Company object by ticker, with CIK fallback.
+    
+    edgartools Company(ticker) sometimes returns None even for valid SEC-registered
+    companies. This function tries ticker first, then falls back to CIK lookup.
+    """
+    # Try direct ticker lookup first
+    company = Company(ticker)
+    if company is not None:
+        return company
+    
+    # Fallback: Look up CIK and try that
+    ticker_to_cik = get_ticker_to_cik_mapping()
+    cik = ticker_to_cik.get(ticker.upper())
+    
+    if cik:
+        try:
+            company = Company(cik)
+            if company is not None:
+                return company
+        except Exception:
+            pass
+    
+    return None
+
+
+# =============================================================================
 # MAIN PROCESSING FUNCTIONS
 # =============================================================================
 
-def get_spinoff_filings_for_company(ticker: str, years: int = 5) -> pd.DataFrame:
+def get_spinoff_filings_for_company(ticker: str, years: int = 2) -> pd.DataFrame:
     """
     Fetch 8-K filings for a company and identify spinoff events.
     
@@ -278,11 +358,17 @@ def get_spinoff_filings_for_company(ticker: str, years: int = 5) -> pd.DataFrame
     try:
         print(f"Fetching 8-K filings for {ticker}...", flush=True)
         
-        # Get company object
-        company = Company(ticker)
+        # Get company object (with CIK fallback)
+        company = get_company_by_ticker_or_cik(ticker)
+        
+        # Check if company was found
+        if company is None:
+            print(f"  ⚠️  Company not found in SEC EDGAR for ticker {ticker} (even with CIK fallback)")
+            return pd.DataFrame()
         
         # Get recent 8-K filings
-        filings = company.get_filings(form='8-K', amendments=False).latest(years * 4)  # More filings for 8-K
+        # Note: amendments parameter removed in newer edgartools versions
+        filings = company.get_filings(form='8-K').latest(years * 4)  # More filings for 8-K
         
         results = []
         
@@ -355,26 +441,28 @@ def main():
     ticker_permno_map = load_ticker_permno_mapping()
     
     # Define universe of tickers to fetch
-    # Option 1: Use existing AP files for universe
+    # Load from S&P 500 pickle file
     universe_tickers = []
     
-    # Try to load from AP_CRSPMonthly
-    ap_crsp_path = Path("../pyData/Intermediate/AP_monthlyCRSP.parquet")
-    if ap_crsp_path.exists():
-        print("Loading tickers from AP_monthlyCRSP.parquet...")
-        crsp_df = pd.read_parquet(ap_crsp_path, columns=['ticker'])
-        universe_tickers = crsp_df['ticker'].dropna().unique().tolist()
-        print(f"✓ Found {len(universe_tickers)} unique tickers from AP_CRSPMonthly")
+    # Load from S&P 500 pickle file
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
+    if universe_path.exists():
+        try:
+            with open(universe_path, 'rb') as f:
+                universe_tickers = pickle.load(f)
+            print(f"✓ Loaded {len(universe_tickers)} tickers from sp500_universe.pkl")
+        except Exception as e:
+            print(f"⚠️  Could not load sp500_universe.pkl: {e}")
     
-    # If no AP file, try loading from CCM linking table
+    # Fallback: Try to load from AP_CRSPMonthly
     if not universe_tickers:
-        ccm_path = Path("../pyData/Intermediate/CCMLinkingTable.parquet")
-        if ccm_path.exists():
-            print("Loading tickers from CCMLinkingTable.parquet...")
-            ccm_df = pd.read_parquet(ccm_path)
-            if 'ticker' in ccm_df.columns:
-                universe_tickers = ccm_df['ticker'].dropna().unique().tolist()
-                print(f"✓ Found {len(universe_tickers)} unique tickers from CCM linking")
+        ap_crsp_path = Path("../pyData/Intermediate/AP_monthlyCRSP.parquet")
+        if ap_crsp_path.exists():
+            print("Loading tickers from AP_monthlyCRSP.parquet...")
+            crsp_df = pd.read_parquet(ap_crsp_path, columns=['ticker'])
+            universe_tickers = crsp_df['ticker'].dropna().unique().tolist()
+            print(f"✓ Found {len(universe_tickers)} unique tickers from AP_CRSPMonthly")
     
     # If still no universe, use a sample
     if not universe_tickers:
@@ -393,7 +481,7 @@ def main():
         print(f"\n[{i}/{len(universe_tickers)}] Processing {ticker}...")
         
         # Fetch 8-K spinoff data
-        ticker_data = get_spinoff_filings_for_company(ticker, years=5)
+        ticker_data = get_spinoff_filings_for_company(ticker, years=2)
         
         if not ticker_data.empty:
             all_spinoff_data.append(ticker_data)

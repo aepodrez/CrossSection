@@ -23,7 +23,7 @@ Notes:
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
@@ -54,9 +54,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # SPY = S&P 500 ETF (1993+)
 MARKET_TICKER = '^GSPC'  # S&P 500 Index for long history
 
-# Date range
-START_DATE = '1927-01-01'  # S&P 500 index available from 1927
+# Date range - Last 2 years
 END_DATE = datetime.now().strftime('%Y-%m-%d')
+START_DATE = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')  # 2 years ago
 
 # Debug mode
 DEBUG_MODE = False
@@ -119,8 +119,22 @@ def download_market_returns():
         print(f"❌ Error downloading market data: {e}")
         return pd.DataFrame()
 
+def load_sp500_universe():
+    """Load S&P 500 ticker universe from pickle file"""
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
+    try:
+        with open(universe_path, 'rb') as f:
+            tickers = pickle.load(f)
+        print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
+        return tickers
+    except Exception as e:
+        print(f"⚠️  Could not load sp500_universe.pkl: {e}")
+        # Fallback to Wikipedia
+        return get_sp500_tickers()
+
 def get_sp500_tickers():
-    """Get current S&P 500 ticker list from Wikipedia"""
+    """Get current S&P 500 ticker list from Wikipedia (fallback)"""
     try:
         url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
         tables = pd.read_html(url)
@@ -219,7 +233,7 @@ def main():
     print(f"  This may take 10-15 minutes for full history")
     
     # Get S&P 500 tickers
-    sp500_tickers = get_sp500_tickers()
+    sp500_tickers = load_sp500_universe()
     
     if sp500_tickers:
         ew_returns = calculate_equal_weighted_returns(sp500_tickers, START_DATE, END_DATE)

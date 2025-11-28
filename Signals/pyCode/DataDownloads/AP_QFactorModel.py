@@ -28,6 +28,9 @@ Environment variables:
 
 import os
 from datetime import datetime, timedelta
+import requests
+import json
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -52,8 +55,8 @@ BASE_DIR = os.path.join(os.path.dirname(__file__), "..")
 UNIVERSE_CSV = os.path.join(BASE_DIR, "pyData", "Reference", "qfactor_universe.csv")
 OUTPUT_PARQUET = os.path.join(BASE_DIR, "pyData", "Intermediate", "d_qfactor_live.parquet")
 
-# How far back to build daily factor series
-LOOKBACK_DAYS = 365  # change to 252, 730, etc.
+# How far back to build daily factor series - Last 2 years
+LOOKBACK_DAYS = 730  # 2 years (730 days)
 
 # -----------------------------------------------------------------------------
 # INIT
@@ -73,6 +76,84 @@ set_identity(EDGAR_IDENTITY)
 print("=" * 80, flush=True)
 print("📈 QFactorModel_Live.py - Live HXZ-style Q-Factors from EDGAR + Yahoo + FRED", flush=True)
 print("=" * 80, flush=True)
+
+
+# -----------------------------------------------------------------------------
+# TICKER TO CIK MAPPING (FALLBACK FOR EDGARTOOLS LIMITATION)
+# -----------------------------------------------------------------------------
+
+_ticker_to_cik_cache_qfactor = None
+
+def get_ticker_to_cik_mapping_qfactor() -> Dict[str, str]:
+    """
+    Get ticker to CIK mapping from SEC company_tickers.json.
+    Caches the result to avoid repeated downloads.
+    """
+    global _ticker_to_cik_cache_qfactor
+    
+    if _ticker_to_cik_cache_qfactor is not None:
+        return _ticker_to_cik_cache_qfactor
+    
+    url = "https://www.sec.gov/files/company_tickers.json"
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'AP_QFactorModel/1.0 (test@example.com)',
+        'Accept': 'application/json'
+    })
+    
+    try:
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        mapping = {}
+        items = data.items() if isinstance(data, dict) else enumerate(data)
+        
+        for _, row in items:
+            if not isinstance(row, dict):
+                continue
+            ticker = row.get("ticker", "").upper().strip()
+            cik = row.get("cik_str") or row.get("cik")
+            if not ticker or cik is None:
+                continue
+            try:
+                cik_str = str(int(cik)).zfill(10)
+                mapping[ticker] = cik_str
+            except (ValueError, TypeError):
+                continue
+        
+        _ticker_to_cik_cache_qfactor = mapping
+        return mapping
+    except Exception as e:
+        print(f"⚠️  Warning: Could not load SEC ticker mapping: {e}")
+        return {}
+
+
+def get_company_by_ticker_or_cik_qfactor(ticker: str) -> Optional:
+    """
+    Get Company object by ticker, with CIK fallback.
+    
+    edgartools Company(ticker) sometimes returns None even for valid SEC-registered
+    companies. This function tries ticker first, then falls back to CIK lookup.
+    """
+    # Try direct ticker lookup first
+    company = Company(ticker)
+    if company is not None:
+        return company
+    
+    # Fallback: Look up CIK and try that
+    ticker_to_cik = get_ticker_to_cik_mapping_qfactor()
+    cik = ticker_to_cik.get(ticker.upper())
+    
+    if cik:
+        try:
+            company = Company(cik)
+            if company is not None:
+                return company
+        except Exception:
+            pass
+    
+    return None
 
 
 # -----------------------------------------------------------------------------
@@ -113,7 +194,11 @@ def get_ia_roe_from_edgar(ticker: str):
         - get_stockholders_equity(period_offset)
     """
     try:
-        c = Company(ticker)
+        # Get company object (with CIK fallback)
+        c = get_company_by_ticker_or_cik_qfactor(ticker)
+        if c is None:
+            return np.nan, np.nan
+        
         fin = c.get_financials()
         if fin is None:
             return np.nan, np.nan

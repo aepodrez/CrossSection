@@ -65,7 +65,7 @@ print(f"  - Cutoff: {CUTOFF_DATE}")
 
 def download_fred_series(series_id, api_key):
     """
-    Download time series from FRED API.
+    Download time series from FRED API - Last 2 years.
     
     Args:
         series_id: FRED series identifier (e.g., 'VIXCLS')
@@ -74,15 +74,19 @@ def download_fred_series(series_id, api_key):
     Returns:
         DataFrame with columns: date, [series_id]
     """
+    from datetime import timedelta
     
-    print(f"\n📥 Downloading {series_id} from FRED...")
+    # Calculate 2 years ago
+    start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+    
+    print(f"\n📥 Downloading {series_id} from FRED (since {start_date})...")
     
     url = "https://api.stlouisfed.org/fred/series/observations"
     params = {
         'series_id': series_id,
         'api_key': api_key,
         'file_type': 'json',
-        'observation_start': '1900-01-01'
+        'observation_start': start_date  # Last 2 years
     }
     
     try:

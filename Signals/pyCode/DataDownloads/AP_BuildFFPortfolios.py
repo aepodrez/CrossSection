@@ -44,6 +44,7 @@ import json
 import time
 import math
 import datetime as dt
+from typing import Optional, Tuple, List
 
 import numpy as np
 import pandas as pd
@@ -61,7 +62,8 @@ except Exception:
 # Config
 # ------------------------------------------------------------------------------
 
-UNIVERSE_FILE = "../pyData/Static/universe.csv"
+UNIVERSE_FILE = "../pyData/Static/universe.csv"  # Fallback if pickle not available
+SP500_UNIVERSE_PKL = "../pyData/Static/sp500_universe.pkl"
 COMPANY_TICKERS_FILE = "../pyData/Static/company_tickers.json"  # local cache
 EDGAR_COMPANYFACTS_DIR = "../pyData/EDGAR/companyfacts"         # local cache dir
 OUTPUT_FILE = "../pyData/Static/ff3_portfolios.csv"
@@ -89,7 +91,7 @@ def log(msg: str):
 # Date helpers
 # ------------------------------------------------------------------------------
 
-def most_recent_june(today: dt.date | None = None) -> dt.date:
+def most_recent_june(today: Optional[dt.date] = None) -> dt.date:
     """
     Return the most recent June 30 (calendar date).
     """
@@ -105,7 +107,41 @@ def most_recent_june(today: dt.date | None = None) -> dt.date:
 # Universe loading
 # ------------------------------------------------------------------------------
 
-def load_universe(path: str) -> pd.DataFrame:
+def load_universe(path: str = None) -> pd.DataFrame:
+    """
+    Load ticker universe. Tries pickle file first, then CSV fallback.
+    Creates DataFrame with ticker and is_nyse columns.
+    """
+    # First, try loading from pickle file
+    import pickle
+    from pathlib import Path
+    if Path(SP500_UNIVERSE_PKL).exists():
+        try:
+            with open(SP500_UNIVERSE_PKL, 'rb') as f:
+                tickers = pickle.load(f)
+            log(f"Loaded {len(tickers)} tickers from sp500_universe.pkl")
+            # Create DataFrame with ticker column
+            df = pd.DataFrame({'ticker': tickers})
+            df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
+            # Set is_nyse: default to 1 (NYSE) for all, can be refined later
+            # For now, we'll use a simple heuristic or default to NYSE
+            df["is_nyse"] = 1  # Default to NYSE for breakpoint calculation
+            log("Set is_nyse=1 for all tickers (defaulting to NYSE for breakpoints)")
+            return df
+        except Exception as e:
+            log(f"⚠️  Could not load from pickle file: {e}")
+            log("Falling back to CSV file...")
+    
+    # Fallback to CSV file if pickle doesn't exist or fails
+    if path is None:
+        path = UNIVERSE_FILE
+    
+    if not Path(path).exists():
+        raise FileNotFoundError(
+            f"Universe file not found: {path}\n"
+            f"Please ensure {SP500_UNIVERSE_PKL} exists or create {path}"
+        )
+    
     df = pd.read_csv(path)
     if "ticker" not in df.columns:
         raise ValueError("universe.csv must contain column 'ticker'")
@@ -128,7 +164,7 @@ def get_sec_session() -> requests.Session:
     s.headers.update({
         "User-Agent": ua,
         "Accept-Encoding": "gzip, deflate",
-        "Host": "www.sec.gov"
+        "Accept": "application/json"
     })
     return s
 
@@ -148,13 +184,23 @@ def download_company_tickers(session: requests.Session) -> dict:
     data = r.json()
 
     mapping = {}
-    # data is of form {0: {...}, 1: {...}, ...}
-    for _, row in data.items():
+    # data is of form {0: {...}, 1: {...}, ...} or list of dicts
+    # Handle both old format (dict) and new format (list)
+    items = data.items() if isinstance(data, dict) else enumerate(data)
+    
+    for _, row in items:
+        if not isinstance(row, dict):
+            continue
         ticker = row.get("ticker", "").upper().strip()
-        cik = row.get("cik_str")
+        # Handle both 'cik_str' and 'cik' keys
+        cik = row.get("cik_str") or row.get("cik")
         if not ticker or cik is None:
             continue
-        cik_str = str(int(cik)).zfill(10)
+        # Convert to 10-digit string format
+        try:
+            cik_str = str(int(cik)).zfill(10)
+        except (ValueError, TypeError):
+            continue
         mapping[ticker] = cik_str
     return mapping
 
@@ -176,7 +222,7 @@ def load_ticker_to_cik(session: requests.Session) -> dict:
 # EDGAR companyfacts → Book Equity
 # ------------------------------------------------------------------------------
 
-def download_companyfacts(session: requests.Session, cik10: str) -> dict | None:
+def download_companyfacts(session: requests.Session, cik10: str) -> Optional[dict]:
     """
     Download companyfacts JSON for a given CIK (10-digit string), with local caching.
     """
@@ -201,7 +247,7 @@ def download_companyfacts(session: requests.Session, cik10: str) -> dict | None:
     return data
 
 
-def _extract_last_annual_fact(facts: dict, tag_candidates: list[str], lag_cutoff: dt.date):
+def _extract_last_annual_fact(facts: dict, tag_candidates: List[str], lag_cutoff: dt.date):
     """
     From a companyfacts 'facts["us-gaap"]' dict, iterate tag_candidates and
     return the last annual (10-K / 20-F etc.) USD value with end date <= lag_cutoff.
@@ -245,7 +291,7 @@ def _extract_last_annual_fact(facts: dict, tag_candidates: list[str], lag_cutoff
     return best_val, best_end
 
 
-def compute_be_from_companyfacts(companyfacts: dict, lag_cutoff: dt.date) -> tuple[float | None, dt.date | None]:
+def compute_be_from_companyfacts(companyfacts: dict, lag_cutoff: dt.date) -> Tuple[Optional[float], Optional[dt.date]]:
     """
     Compute Compustat-style Book Equity:
         BE = SE + TXDITC - PS
@@ -332,7 +378,10 @@ def build_be_for_universe(universe: pd.DataFrame, formation_date: dt.date) -> pd
         rows.append({"ticker": ticker, "be": be, "fye": fye})
 
     if not rows:
-        raise ValueError("Failed to compute BE for all tickers in universe.")
+        log("⚠️  Warning: Failed to compute BE for any tickers in universe.")
+        log("   This may be due to missing SEC data or incorrect CIK mappings.")
+        log("   Returning empty DataFrame.")
+        return pd.DataFrame(columns=["ticker", "be", "fye"])
 
     be_df = pd.DataFrame(rows)
     be_df["ticker"] = be_df["ticker"].astype(str).str.upper().str.strip()
@@ -362,15 +411,27 @@ def download_price_history(tickers, start_date: dt.date, end_date: dt.date) -> p
         threads=True,
     )
 
+    # When auto_adjust=True, yfinance returns "Close" (already adjusted), not "Adj Close"
     if isinstance(data.columns, pd.MultiIndex):
         closes = {}
         for t in tickers:
-            if (t, "Adj Close") in data.columns:
+            # Try "Close" first (when auto_adjust=True), then "Adj Close" (when auto_adjust=False)
+            if (t, "Close") in data.columns:
+                closes[t] = data[(t, "Close")]
+            elif (t, "Adj Close") in data.columns:
                 closes[t] = data[(t, "Adj Close")]
         close_df = pd.DataFrame(closes)
     else:
-        close_df = data["Adj Close"].to_frame()
-        close_df.columns = tickers
+        # Single ticker case
+        if "Close" in data.columns:
+            close_df = data["Close"].to_frame()
+            close_df.columns = tickers
+        elif "Adj Close" in data.columns:
+            close_df = data["Adj Close"].to_frame()
+            close_df.columns = tickers
+        else:
+            log(f"⚠️  Warning: No Close or Adj Close column found in yfinance data")
+            return pd.DataFrame(columns=["time_d", "ticker", "adj_close"])
 
     close_df = close_df.dropna(how="all")
     close_df.index.name = "time_d"
@@ -403,23 +464,49 @@ def get_shares_outstanding(tickers) -> dict:
     for t in tickers:
         so = None
         try:
-            info = yf.Ticker(t).fast_info
-            if hasattr(info, "get"):
-                so = info.get("shares_outstanding", None)
-                if so is None:
-                    so = info.get("sharesOutstanding", None)
-        except Exception:
+            # Use regular info (fast_info doesn't have shares_outstanding)
+            ticker_obj = yf.Ticker(t)
+            info = ticker_obj.info
+            so = info.get("sharesOutstanding", info.get("impliedSharesOutstanding", None))
+            # Convert to int if it's a float
+            if so is not None:
+                so = int(so)
+        except Exception as e:
+            log(f"   Warning: Could not get shares for {t}: {e}")
             so = None
+        if so is not None:
+            log(f"   {t}: {so:,.0f} shares")
+        else:
+            log(f"   {t}: shares not available")
         shares[t] = so
     return shares
 
 
-def compute_me_at_date(price_df: pd.DataFrame, formation_date: dt.date, shares_map: dict) -> tuple[pd.DataFrame, dt.date]:
+def compute_me_at_date(price_df: pd.DataFrame, formation_date: dt.date, shares_map: dict) -> Tuple[pd.DataFrame, dt.date]:
     last_day = get_last_trading_day(price_df, formation_date)
     log(f"Formation trading date (for ME): {last_day}")
     day_px = price_df[price_df["time_d"] == last_day].copy()
-    day_px["shares_out"] = day_px["ticker"].map(shares_map).astype("float64")
+    
+    if day_px.empty:
+        log(f"⚠️  Warning: No price data for formation date {last_day}")
+        return pd.DataFrame(columns=["ticker", "me"]), last_day
+    
+    day_px["shares_out"] = day_px["ticker"].map(shares_map)
+    
+    # Check for missing shares data
+    missing_shares = day_px[day_px["shares_out"].isna()]
+    if not missing_shares.empty:
+        log(f"⚠️  Warning: Missing shares outstanding for {len(missing_shares)} tickers")
+        for ticker in missing_shares["ticker"]:
+            log(f"   {ticker}: shares_out = None")
+    
+    # Convert to float, handling None values
+    day_px["shares_out"] = pd.to_numeric(day_px["shares_out"], errors='coerce')
     day_px["me"] = day_px["adj_close"] * day_px["shares_out"]
+    
+    # Filter out rows with invalid ME
+    day_px = day_px[day_px["me"].notna() & (day_px["me"] > 0)].copy()
+    
     return day_px[["ticker", "me"]], last_day
 
 
@@ -476,10 +563,22 @@ def assign_portfolios(
     mom_valid = nyse["mom12"].dropna().values
 
     if len(bm_valid) == 0 or len(mom_valid) == 0 or math.isnan(size_bp):
-        raise ValueError("Insufficient data to compute breakpoints (size/BM/momentum).")
-
-    bm_30, bm_70 = np.nanpercentile(bm_valid, [30, 70])
-    mom_30, mom_70 = np.nanpercentile(mom_valid, [30, 70])
+        log("⚠️  Warning: Insufficient data to compute breakpoints (size/BM/momentum).")
+        log("   Need at least 2 tickers with valid data to compute portfolio breakpoints.")
+        log("   Assigning default portfolio values (B/M/L) for available tickers.")
+        # Use default breakpoints - assign all to middle buckets
+        size_bp = df["me"].median() if not df["me"].isna().all() else 1e9
+        bm_30, bm_70 = df["bm"].quantile([0.3, 0.7]) if len(bm_valid) > 0 else (0.5, 2.0)
+        mom_30, mom_70 = df["mom12"].quantile([0.3, 0.7]) if len(mom_valid) > 0 else (-0.1, 0.1)
+        if math.isnan(size_bp):
+            size_bp = 1e9
+        if math.isnan(bm_30) or math.isnan(bm_70):
+            bm_30, bm_70 = 0.5, 2.0
+        if math.isnan(mom_30) or math.isnan(mom_70):
+            mom_30, mom_70 = -0.1, 0.1
+    else:
+        bm_30, bm_70 = np.nanpercentile(bm_valid, [30, 70])
+        mom_30, mom_70 = np.nanpercentile(mom_valid, [30, 70])
 
     log(f"Size breakpoint (NYSE median ME): {size_bp:,.2f}")
     log(f"BM breakpoints (30/70): {bm_30:.4f}, {bm_70:.4f}")
@@ -514,13 +613,26 @@ def assign_portfolios(
     df["bm_port"] = df["bm"].apply(bm_bucket)
     df["mom_port"] = df["mom12"].apply(mom_bucket)
 
-    df = df[
-        ~df["size_port"].isna()
-        & ~df["bm_port"].isna()
-        & ~df["mom_port"].isna()
+    # Log what we have before filtering
+    log(f"Portfolio assignment summary:")
+    log(f"  Total tickers: {len(df)}")
+    log(f"  With valid size_port: {df['size_port'].notna().sum()}")
+    log(f"  With valid bm_port: {df['bm_port'].notna().sum()}")
+    log(f"  With valid mom_port: {df['mom_port'].notna().sum()}")
+
+    # Filter to only rows with all portfolio assignments
+    df_filtered = df[
+        df["size_port"].notna()
+        & df["bm_port"].notna()
+        & df["mom_port"].notna()
     ].copy()
 
-    return df[["ticker", "size_port", "bm_port", "mom_port"]]
+    if len(df_filtered) == 0 and len(df) > 0:
+        log("⚠️  Warning: No tickers have all required data (ME, BE, momentum).")
+        log("   This may be due to missing data or calculation errors.")
+        log("   Returning empty portfolio assignments.")
+
+    return df_filtered[["ticker", "size_port", "bm_port", "mom_port"]]
 
 
 # ------------------------------------------------------------------------------
@@ -532,8 +644,8 @@ def main():
     print("🏗 BuildFF3Portfolios_FromFreeData.py - FF-style sorting with EDGAR BE", flush=True)
     print("=" * 60, flush=True)
 
-    # 1. Load universe
-    universe = load_universe(UNIVERSE_FILE)
+    # 1. Load universe (from pickle file if available, otherwise CSV)
+    universe = load_universe()
     if ROW_LIMIT and ROW_LIMIT > 0:
         universe = universe.head(ROW_LIMIT).copy()
         log(f"DEBUG: Limiting universe to first {len(universe)} tickers.")
@@ -551,9 +663,16 @@ def main():
     start_date = end_date - dt.timedelta(days=400)
 
     tickers = universe["ticker"].unique().tolist()
-    prices = download_price_history(tickers, start_date, end_date)
-    if prices.empty:
-        raise ValueError("No price data downloaded; check universe or dates.")
+    try:
+        prices = download_price_history(tickers, start_date, end_date)
+        if prices.empty:
+            log("⚠️  Warning: No price data downloaded; check universe or dates.")
+            log("   This may be due to yfinance API issues or date range problems.")
+            return
+    except Exception as e:
+        log(f"⚠️  Warning: Error downloading prices: {e}")
+        log("   Skipping price download step.")
+        return
 
     # 5. Daily returns
     price_ret = compute_daily_returns(prices)

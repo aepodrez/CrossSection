@@ -25,7 +25,7 @@ import os
 import pandas as pd
 import numpy as np
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 import warnings
@@ -50,9 +50,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # FRED series ID
 SERIES_ID = 'TB3MS'  # 3-Month Treasury Bill Secondary Market Rate
 
-# Date range
-START_DATE = '1934-01-01'  # TB3MS available from 1934
+# Date range - Last 2 years
 END_DATE = datetime.now().strftime('%Y-%m-%d')
+START_DATE = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')  # 2 years ago
 
 print(f"📈 Downloading {SERIES_ID} from {START_DATE} to {END_DATE}")
 
