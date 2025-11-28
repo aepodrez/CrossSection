@@ -26,6 +26,9 @@ Portfolios/Data/*
 Portfolios/pyData/*
 Signals/Data/*
 Signals/pyData/*
+# Exception: Allow Static directory files (like sp500_universe.pkl)
+!Signals/pyData/Static/
+!Signals/pyData/Static/**
 Shipping/Data/* 
 
 # Credentials
