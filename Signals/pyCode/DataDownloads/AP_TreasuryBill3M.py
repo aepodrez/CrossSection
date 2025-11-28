@@ -144,7 +144,8 @@ def aggregate_to_quarterly(monthly_df):
     monthly_df = monthly_df.set_index('date')
     
     # Resample to quarterly, taking average of monthly rates
-    quarterly_df = monthly_df.resample('QE').mean()
+    # Use 'Q' for better compatibility (aggregates to quarter-end by default)
+    quarterly_df = monthly_df.resample('Q').mean()
     quarterly_df = quarterly_df.dropna().reset_index()
     
     print(f"✓ Aggregated to {len(quarterly_df)} quarterly observations")

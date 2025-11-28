@@ -172,18 +172,62 @@ def fetch_sec_tickers() -> pd.DataFrame:
     resp.raise_for_status()
     data = resp.json()
 
-    # SEC gives a dict keyed by index, each value with {cik, ticker, title, exchange}
+    # SEC API structure can vary - handle both dict and list formats
+    # New format: list of dicts with keys: cik_str, ticker, title, exchange
+    # Old format: dict keyed by index, each value with {cik, ticker, title, exchange}
     rows = []
-    for _, v in data.items():
-        cik_int = int(v["cik"])
-        cik_str = f"{cik_int:010d}"
-        rows.append({
-            "cik_str": cik_str,
-            "cik_int": cik_int,
-            "ticker": v["ticker"].upper().strip(),
-            "exchange": v.get("exchange", "").strip(),
-            "name": v.get("title", "").strip(),
-        })
+    
+    if isinstance(data, list):
+        # New format: list of dictionaries
+        for v in data:
+            # Handle both 'cik' and 'cik_str' keys
+            if "cik_str" in v:
+                cik_str = v["cik_str"]
+                try:
+                    cik_int = int(cik_str)
+                except (ValueError, TypeError):
+                    continue
+            elif "cik" in v:
+                cik_int = int(v["cik"])
+                cik_str = f"{cik_int:010d}"
+            else:
+                continue  # Skip entries without CIK
+            
+            rows.append({
+                "cik_str": cik_str,
+                "cik_int": cik_int,
+                "ticker": v.get("ticker", "").upper().strip(),
+                "exchange": v.get("exchange", "").strip(),
+                "name": v.get("title", "").strip(),
+            })
+    elif isinstance(data, dict):
+        # Old format: dict keyed by index
+        for _, v in data.items():
+            if not isinstance(v, dict):
+                continue
+            
+            # Handle both 'cik' and 'cik_str' keys
+            if "cik_str" in v:
+                cik_str = v["cik_str"]
+                try:
+                    cik_int = int(cik_str)
+                except (ValueError, TypeError):
+                    continue
+            elif "cik" in v:
+                cik_int = int(v["cik"])
+                cik_str = f"{cik_int:010d}"
+            else:
+                continue  # Skip entries without CIK
+            
+            rows.append({
+                "cik_str": cik_str,
+                "cik_int": cik_int,
+                "ticker": v.get("ticker", "").upper().strip(),
+                "exchange": v.get("exchange", "").strip(),
+                "name": v.get("title", "").strip(),
+            })
+    else:
+        raise ValueError(f"Unexpected SEC API response format: {type(data)}")
 
     df = pd.DataFrame(rows)
     print(f"[SEC] Loaded {len(df)} rows from SEC ticker file.", flush=True)
