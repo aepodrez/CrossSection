@@ -217,17 +217,34 @@ def get_ia_roe_from_edgar(ticker: str):
             return np.nan, np.nan
 
         # period_offset=0 -> most recent, 1 -> previous period
-        assets_t = fin.get_total_assets(0)
-        assets_tm1 = fin.get_total_assets(1)
-        ni_t = fin.get_net_income(0)
-        be_t = fin.get_stockholders_equity(0)
+        assets_t_raw = fin.get_total_assets(0)
+        assets_tm1_raw = fin.get_total_assets(1)
+        ni_t_raw = fin.get_net_income(0)
+        be_t_raw = fin.get_stockholders_equity(0)
 
+        # Convert to numeric, handling strings and None values
+        def to_float(val):
+            """Safely convert value to float, returning np.nan if conversion fails."""
+            if val is None:
+                return np.nan
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return np.nan
+
+        assets_t = to_float(assets_t_raw)
+        assets_tm1 = to_float(assets_tm1_raw)
+        ni_t = to_float(ni_t_raw)
+        be_t = to_float(be_t_raw)
+
+        # Calculate IA (Investment-to-Assets)
         ia = np.nan
-        if assets_t is not None and assets_tm1 not in (None, 0):
+        if not np.isnan(assets_t) and not np.isnan(assets_tm1) and assets_tm1 != 0:
             ia = (assets_t - assets_tm1) / assets_tm1
 
+        # Calculate ROE (Return on Equity)
         roe = np.nan
-        if ni_t is not None and be_t not in (None, 0):
+        if not np.isnan(ni_t) and not np.isnan(be_t) and be_t != 0:
             roe = ni_t / be_t
 
         return ia, roe
