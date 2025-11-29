@@ -23,13 +23,13 @@ Requirements:
 
 import os
 import sys
+import time
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from io import StringIO
-import time
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -56,7 +56,8 @@ def download_finra_short_interest(date: str) -> Optional[pd.DataFrame]:
     Download FINRA short sale volume data for a specific date.
     
     FINRA provides daily short sale volume data in CSV format.
-    URL format: https://cdn.finra.org/equity/regsho/daily/[YYYYMMDD]/CNMSshvol[YYYYMMDD].txt
+    Correct URL format (Consolidated NMS file):
+        https://cdn.finra.org/equity/regsho/daily/CNMSshvolYYYYMMDD.txt
     
     Args:
         date: Date in YYYYMMDD format
@@ -67,62 +68,56 @@ def download_finra_short_interest(date: str) -> Optional[pd.DataFrame]:
     if not REQUESTS_AVAILABLE:
         return None
     
-    url = f"https://cdn.finra.org/equity/regsho/daily/{date}/CNMSshvol{date}.txt"
+    # ✅ Correct URL (no date subfolder)
+    url = f"https://cdn.finra.org/equity/regsho/daily/CNMSshvol{date}.txt"
     
-    # FINRA requires proper headers and may have tightened bot detection
-    # Use a more recent User-Agent and additional headers to mimic browser behavior
+    # Simple headers - CDN endpoints usually work with minimal headers
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Referer': 'https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data',
-        'Origin': 'https://www.finra.org',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'same-site',
-        'Cache-Control': 'max-age=0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
-    
-    # Use a session to maintain cookies
-    session = requests.Session()
-    session.headers.update(headers)
     
     try:
         print(f"  Downloading FINRA data for {date}...", flush=True)
         
-        # First, try to access the main FINRA page to establish session
-        try:
-            session.get('https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data', timeout=10)
-        except:
-            pass  # Continue even if this fails
-        
         # Add small delay to avoid rate limiting
         time.sleep(0.5)
         
-        response = session.get(url, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        # Handle 404 (holiday/non-trading day) gracefully
+        if response.status_code == 404:
+            print(f"    ⚠️  No file for {date} (likely holiday/non-trading day)")
+            return None
+        
+        # Handle 403 Forbidden errors
+        if response.status_code == 403:
+            print(f"    ⚠️  Could not download {date}: 403 Forbidden")
+            return None
+        
         response.raise_for_status()
         
-        # Read from response content instead of URL to avoid double request
+        # Read from response content (avoid double request)
+        # FINRA files have header in first line: Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market
         df = pd.read_csv(
             StringIO(response.text),
             sep='|',
-            skiprows=1,  # Skip header row
-            header=0,
+            header=0,  # First line is the header
             dtype=str
         )
         
         # Clean column names (remove whitespace)
         df.columns = df.columns.str.strip()
         
-        # Expected columns: Date, Symbol, ShortVolume, ShortExemptVolume, TotalVolume
-        # Some files may have different formats
-        if 'ShortVolume' in df.columns or 'Short Volume' in df.columns:
+        # Expected columns: Date, Symbol, ShortVolume, ShortExemptVolume, TotalVolume, Market
+        # Check for ShortVolume column (case-insensitive)
+        has_short_volume = any('ShortVolume' in col or 'Short Volume' in col or 'shortvolume' in col.lower() 
+                              for col in df.columns)
+        
+        if has_short_volume or 'Symbol' in df.columns:
             return df
         else:
             print(f"    ⚠️  Unexpected column format for {date}")
+            print(f"       Columns found: {df.columns.tolist()}")
             return None
             
     except requests.exceptions.RequestException as e:
@@ -214,13 +209,32 @@ def process_finra_data(finra_df: pd.DataFrame) -> pd.DataFrame:
     
     # Convert date if it's a string
     if 'date' in df.columns:
-        if df['date'].dtype == 'object':
-            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        # Safely access the date column
+        try:
+            date_col = df['date']
+            # Check if it's a Series (normal case)
+            if isinstance(date_col, pd.Series):
+                if date_col.dtype == 'object' or str(date_col.dtype) == 'string':
+                    df['date'] = pd.to_datetime(date_col, errors='coerce')
+            # If it's somehow a DataFrame, take the first column
+            elif isinstance(date_col, pd.DataFrame):
+                if len(date_col.columns) > 0:
+                    df['date'] = pd.to_datetime(date_col.iloc[:, 0], errors='coerce')
+        except (KeyError, AttributeError) as e:
+            # If there's an issue accessing the column, skip date conversion
+            print(f"⚠️  Warning: Could not process date column: {e}")
     else:
         # Try to extract from other date columns
         date_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
         if date_cols:
-            df['date'] = pd.to_datetime(df[date_cols[0]], errors='coerce')
+            try:
+                date_col = df[date_cols[0]]
+                if isinstance(date_col, pd.Series):
+                    df['date'] = pd.to_datetime(date_col, errors='coerce')
+                elif isinstance(date_col, pd.DataFrame) and len(date_col.columns) > 0:
+                    df['date'] = pd.to_datetime(date_col.iloc[:, 0], errors='coerce')
+            except (KeyError, AttributeError):
+                pass
     
     # Convert short_volume to numeric
     df['short_volume'] = pd.to_numeric(df['short_volume'], errors='coerce')
@@ -300,9 +314,39 @@ def aggregate_to_monthly(daily_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     
     df = daily_df.copy()
+
+    # If there are multiple 'date' columns (duplicate labels), collapse to a single one
+    if 'date' in df.columns:
+        # Find all indices where column label is exactly 'date'
+        date_indices = [i for i, c in enumerate(df.columns) if c == 'date']
+        if len(date_indices) > 1:
+            # Use the first 'date' column as the canonical one
+            primary_date = df.iloc[:, date_indices[0]]
+            # Drop all columns named 'date'
+            df = df.loc[:, df.columns != 'date']
+            # Reattach the canonical 'date' column once
+            df['date'] = primary_date
+    # Ensure date column exists and is a Series
+    if 'date' not in df.columns:
+        print("⚠️  'date' column not found in daily_df")
+        return pd.DataFrame()
+    
+    # Safely access the date column
+    date_col = df['date']
+    if isinstance(date_col, pd.DataFrame):
+        # If it's a DataFrame (unlikely but handle it), take first column
+        if len(date_col.columns) > 0:
+            date_col = date_col.iloc[:, 0]
+        else:
+            print("⚠️  Date column is empty DataFrame")
+            return pd.DataFrame()
+    
+    # Ensure date is datetime type
+    if not pd.api.types.is_datetime64_any_dtype(date_col):
+        date_col = pd.to_datetime(date_col, errors='coerce')
     
     # Convert date to monthly period
-    df['time_avail_m'] = df['date'].dt.to_period('M').dt.to_timestamp()
+    df['time_avail_m'] = date_col.dt.to_period('M').dt.to_timestamp()
     
     # Sort by ticker, time, and date
     df = df.sort_values(['ticker', 'time_avail_m', 'date'])

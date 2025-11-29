@@ -372,6 +372,84 @@ def extract_xbrl_value(xbrl_data, tag_list: List[str], period_end=None) -> Optio
     return None
 
 
+# =============================================================================
+# TICKER TO CIK MAPPING (FALLBACK FOR EDGARTOOLS LIMITATION)
+# =============================================================================
+
+_ticker_to_cik_cache_quarterly = None
+
+def get_ticker_to_cik_mapping_quarterly() -> Dict[str, str]:
+    """
+    Get ticker to CIK mapping from SEC company_tickers.json.
+    Caches the result to avoid repeated downloads.
+    """
+    global _ticker_to_cik_cache_quarterly
+    
+    if _ticker_to_cik_cache_quarterly is not None:
+        return _ticker_to_cik_cache_quarterly
+    
+    url = "https://www.sec.gov/files/company_tickers.json"
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'AP_CompustatQuarterly/1.0 (test@example.com)',
+        'Accept': 'application/json'
+    })
+    
+    try:
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        mapping = {}
+        items = data.items() if isinstance(data, dict) else enumerate(data)
+        
+        for _, row in items:
+            if not isinstance(row, dict):
+                continue
+            ticker = row.get("ticker", "").upper().strip()
+            cik = row.get("cik_str") or row.get("cik")
+            if not ticker or cik is None:
+                continue
+            try:
+                cik_str = str(int(cik)).zfill(10)
+                mapping[ticker] = cik_str
+            except (ValueError, TypeError):
+                continue
+        
+        _ticker_to_cik_cache_quarterly = mapping
+        return mapping
+    except Exception as e:
+        print(f"⚠️  Warning: Could not load SEC ticker mapping: {e}")
+        return {}
+
+
+def get_company_by_ticker_or_cik_quarterly(ticker: str) -> Optional:
+    """
+    Get Company object by ticker, with CIK fallback.
+    
+    edgartools Company(ticker) sometimes returns None even for valid SEC-registered
+    companies. This function tries ticker first, then falls back to CIK lookup.
+    """
+    # Try direct ticker lookup first
+    company = Company(ticker)
+    if company is not None:
+        return company
+    
+    # Fallback: Look up CIK and try that
+    ticker_to_cik = get_ticker_to_cik_mapping_quarterly()
+    cik = ticker_to_cik.get(ticker.upper())
+    
+    if cik:
+        try:
+            company = Company(cik)
+            if company is not None:
+                return company
+        except Exception:
+            pass
+    
+    return None
+
+
 def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = False) -> pd.DataFrame:
     """
     Fetch 10-Q filings for a company and extract financial data using edgartools API.

@@ -26,7 +26,24 @@ import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 import warnings
+import sys
+import io
 warnings.filterwarnings('ignore')
+
+# Suppress yfinance stderr warnings for delisted/missing tickers
+class SuppressStderr:
+    """Context manager to suppress stderr output"""
+    def __init__(self):
+        self.original_stderr = sys.stderr
+        self.suppressed_stderr = io.StringIO()
+    
+    def __enter__(self):
+        sys.stderr = self.suppressed_stderr
+        return self
+    
+    def __exit__(self, *args):
+        sys.stderr = self.original_stderr
+        return False
 
 # Try to import yfinance
 try:
@@ -167,16 +184,21 @@ def calculate_equal_weighted_returns(tickers, start_date, end_date):
     successful = 0
     failed = 0
     
+    failed_tickers = []  # Track which tickers failed for summary
+    
     for i, ticker in enumerate(tickers, 1):
         if i % 50 == 0:
             print(f"  Progress: {i}/{len(tickers)} ({successful} successful, {failed} failed)")
         
         try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(start=start_date, end=end_date, interval='1mo')
+            # Suppress yfinance stderr warnings for problematic tickers
+            with SuppressStderr():
+                stock = yf.Ticker(ticker)
+                hist = stock.history(start=start_date, end=end_date, interval='1mo')
             
             if hist.empty:
                 failed += 1
+                failed_tickers.append(ticker)
                 continue
             
             hist_df = hist.reset_index()
@@ -187,9 +209,16 @@ def calculate_equal_weighted_returns(tickers, start_date, end_date):
             all_returns.append(hist_df[['time_avail_m', 'ticker', 'ret']])
             successful += 1
             
-        except:
+        except Exception as e:
             failed += 1
+            failed_tickers.append(ticker)
             continue
+    
+    # Print summary of failed tickers (only if there are failures)
+    if failed_tickers and len(failed_tickers) <= 20:  # Only show if reasonable number
+        print(f"  ⚠️  Skipped {len(failed_tickers)} tickers (delisted/no data): {', '.join(failed_tickers[:10])}{'...' if len(failed_tickers) > 10 else ''}")
+    elif failed_tickers:
+        print(f"  ⚠️  Skipped {len(failed_tickers)} tickers (delisted/no data)")
     
     print(f"✓ Downloaded data for {successful}/{len(tickers)} tickers")
     

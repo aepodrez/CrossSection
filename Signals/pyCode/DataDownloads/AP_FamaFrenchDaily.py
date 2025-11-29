@@ -102,34 +102,99 @@ def download_price_history(tickers, start_date: dt.date, end_date: dt.date) -> p
     """
     Download adjusted close prices for tickers from Yahoo Finance.
     Returns a long DataFrame: [time_d, ticker, adj_close].
+    Handles partial failures gracefully - continues with successfully downloaded tickers.
     """
     if len(tickers) == 0:
         raise ValueError("No tickers in portfolio file.")
 
     print(f"Downloading prices from Yahoo Finance for {len(tickers)} tickers...", flush=True)
-    data = yf.download(
-        tickers=tickers,
-        start=start_date,
-        end=end_date + dt.timedelta(days=1),  # yfinance end is exclusive
-        auto_adjust=True,
-        group_by="ticker",
-        progress=False,
-        threads=True,
-    )
-
-    # yfinance shape depends on single vs multi ticker; normalize
-    # We will extract a panel: index = date, columns = tickers (Adj Close)
-    if isinstance(data.columns, pd.MultiIndex):
-        closes = {}
-        for t in tickers:
-            if (t, "Adj Close") in data.columns:
-                closes[t] = data[(t, "Adj Close")]
-        close_df = pd.DataFrame(closes)
+    
+    # Try batch download first
+    try:
+        data = yf.download(
+            tickers=tickers,
+            start=start_date,
+            end=end_date + dt.timedelta(days=1),  # yfinance end is exclusive
+            auto_adjust=True,
+            group_by="ticker",
+            progress=False,
+            threads=True,
+            timeout=30,  # Increase timeout
+        )
+    except Exception as e:
+        print(f"⚠️  Batch download encountered errors, trying individual downloads...", flush=True)
+        data = None
+    
+    # If batch download failed or returned empty, try individual downloads
+    if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+        print(f"   Downloading tickers individually (this may take longer)...", flush=True)
+        all_closes = {}
+        successful = 0
+        failed = []
+        
+        for ticker in tickers:
+            try:
+                ticker_data = yf.download(
+                    tickers=ticker,
+                    start=start_date,
+                    end=end_date + dt.timedelta(days=1),
+                    auto_adjust=True,
+                    progress=False,
+                    timeout=30,
+                )
+                # When auto_adjust=True, yfinance returns "Close" (already adjusted)
+                if not ticker_data.empty:
+                    if 'Close' in ticker_data.columns:
+                        all_closes[ticker] = ticker_data['Close']
+                        successful += 1
+                    elif 'Adj Close' in ticker_data.columns:
+                        all_closes[ticker] = ticker_data['Adj Close']
+                        successful += 1
+                    else:
+                        failed.append(ticker)
+                else:
+                    failed.append(ticker)
+            except Exception as e:
+                failed.append(ticker)
+                if len(failed) <= 5:  # Only print first 5 failures
+                    error_msg = str(e)[:100] if len(str(e)) > 100 else str(e)
+                    print(f"   ⚠️  Failed to download {ticker}: {error_msg}", flush=True)
+                continue
+        
+        if all_closes:
+            close_df = pd.DataFrame(all_closes)
+            print(f"   ✓ Successfully downloaded {successful}/{len(tickers)} tickers", flush=True)
+            if failed:
+                print(f"   ⚠️  Failed: {len(failed)} tickers", flush=True)
+        else:
+            close_df = pd.DataFrame()
     else:
-        # Single ticker
-        close_df = data["Adj Close"].to_frame()
-        close_df.columns = tickers
+        # Process batch download results
+        # yfinance shape depends on single vs multi ticker; normalize
+        # We will extract a panel: index = date, columns = tickers (Adj Close)
+        if isinstance(data.columns, pd.MultiIndex):
+            closes = {}
+            for t in tickers:
+                # When auto_adjust=True, use "Close" (already adjusted)
+                if (t, "Close") in data.columns:
+                    closes[t] = data[(t, "Close")]
+                elif (t, "Adj Close") in data.columns:
+                    closes[t] = data[(t, "Adj Close")]
+            close_df = pd.DataFrame(closes)
+        else:
+            # Single ticker
+            if "Close" in data.columns:
+                close_df = data["Close"].to_frame()
+            elif "Adj Close" in data.columns:
+                close_df = data["Adj Close"].to_frame()
+            else:
+                close_df = pd.DataFrame()
+            if not close_df.empty:
+                close_df.columns = tickers
 
+    if close_df.empty:
+        return pd.DataFrame()
+    
     close_df = close_df.dropna(how="all")
     close_df.index.name = "time_d"
 
@@ -194,6 +259,12 @@ def fetch_risk_free(start_date: dt.date, end_date: dt.date) -> pd.DataFrame:
     """
     if not HAS_FRED:
         print("pandas_datareader not installed; setting RF = 0", flush=True)
+        # Ensure start_date and end_date are valid (not NaT)
+        if pd.isna(start_date) or pd.isna(end_date):
+            print("⚠️  Warning: Invalid date range for risk-free rate, using default range", flush=True)
+            start_date = dt.date.today() - dt.timedelta(days=730)
+            end_date = dt.date.today()
+        
         rf = pd.DataFrame(
             {
                 "time_d": pd.date_range(start=start_date, end=end_date, freq="D").date,
@@ -403,7 +474,26 @@ def main():
 
     # Download prices & compute daily returns
     price_raw = download_price_history(tickers, start_date, end_date)
+    
+    if price_raw.empty:
+        print("❌ No price data downloaded. Exiting.", flush=True)
+        print("   This may be due to network timeouts or Yahoo Finance API issues.", flush=True)
+        print("   Try running again - some tickers may succeed on retry.", flush=True)
+        return
+    
+    # Check how many tickers we successfully downloaded
+    downloaded_tickers = price_raw["ticker"].unique() if not price_raw.empty else []
+    failed_tickers = set(tickers) - set(downloaded_tickers)
+    
+    if failed_tickers:
+        print(f"⚠️  Warning: Failed to download data for {len(failed_tickers)} tickers: {sorted(list(failed_tickers))[:10]}{'...' if len(failed_tickers) > 10 else ''}", flush=True)
+        print(f"   Continuing with {len(downloaded_tickers)}/{len(tickers)} tickers that downloaded successfully.", flush=True)
+    
     price_ret = compute_daily_returns(price_raw)
+    
+    if price_ret.empty:
+        print("❌ No return data computed. Exiting.", flush=True)
+        return
 
     if ROW_LIMIT is not None and ROW_LIMIT > 0:
         # limit by unique dates for debugging
@@ -416,9 +506,23 @@ def main():
     # Market caps (approximate)
     shares_map = get_shares_outstanding(tickers)
     price_ret = compute_market_caps(price_ret, shares_map)
+    
+    # Check if price_ret is empty after market cap computation
+    if price_ret.empty or price_ret["time_d"].isna().all():
+        print("❌ No valid price/return data after processing. Exiting.", flush=True)
+        return
+    
+    # Get valid date range (filter out NaT)
+    valid_dates = price_ret["time_d"].dropna()
+    if valid_dates.empty:
+        print("❌ No valid dates in price data. Exiting.", flush=True)
+        return
+    
+    min_date = valid_dates.min()
+    max_date = valid_dates.max()
 
     # Risk-free rates
-    rf_df = fetch_risk_free(price_ret["time_d"].min(), price_ret["time_d"].max())
+    rf_df = fetch_risk_free(min_date, max_date)
 
     # Compute factors day by day
     factors = []
