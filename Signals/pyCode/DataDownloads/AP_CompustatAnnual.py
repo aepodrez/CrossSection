@@ -32,7 +32,11 @@ from typing import Dict, List, Optional
 import warnings
 import requests
 import json
+from dotenv import load_dotenv
 warnings.filterwarnings('ignore')
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Try to import edgartools
 try:

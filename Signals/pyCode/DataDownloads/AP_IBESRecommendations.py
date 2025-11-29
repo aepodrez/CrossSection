@@ -22,6 +22,7 @@ Notes:
 """
 
 import os
+import sys
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -283,12 +284,12 @@ def main():
     if not EIKON_AVAILABLE:
         print("\n❌ Cannot proceed without eikon package. Please install:")
         print("   pip install eikon")
-        return
+        sys.exit(1)
     
     # Connect to Eikon
     if not connect_eikon():
         print("\n❌ Eikon connection failed")
-        return
+        sys.exit(1)
     
     # Get ticker universe
     print(f"\n📋 Loading ticker universe...")
@@ -304,14 +305,14 @@ def main():
     
     if rec_df.empty:
         print("\n❌ No recommendations data retrieved")
-        return
+        sys.exit(1)
     
     # Process data
     final_df = process_recommendations_data(rec_df)
     
     if final_df.empty:
         print("\n❌ Data processing resulted in empty DataFrame")
-        return
+        sys.exit(1)
     
     # Save output
     print(f"\n💾 Saving output...")

@@ -25,6 +25,7 @@ Notes:
 """
 
 import os
+import sys
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -332,11 +333,11 @@ def main():
     if not EIKON_AVAILABLE:
         print("\n❌ Cannot proceed without eikon package. Please install:")
         print("   pip install eikon")
-        return
+        sys.exit(1)
     
     if not connect_eikon():
         print("\n❌ Eikon connection failed")
-        return
+        sys.exit(1)
     
     print(f"\n📋 Loading ticker universe...")
     if DEBUG_MODE:
@@ -351,7 +352,7 @@ def main():
     
     if ibes_df.empty:
         print("\n❌ No IBES data retrieved")
-        return
+        sys.exit(1)
     
     final_df = process_unadjusted_data(ibes_df)
     

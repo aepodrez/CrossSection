@@ -4,7 +4,7 @@
 # ABOUTME: Uses 2x3x3 size/IA/ROE sorts and equal-weighted portfolios to build daily ME, IA, ROE factors.
 """
 Inputs:
-- ../pyData/Reference/qfactor_universe.csv   (must contain column 'ticker')
+- ../pyData/Static/sp500_universe.pkl   (pickle file containing list of tickers)
 
 Outputs:
 - ../pyData/Intermediate/d_qfactor_live.parquet
@@ -52,8 +52,9 @@ except ImportError:  # fredapi not installed
 # -----------------------------------------------------------------------------
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "..")
-UNIVERSE_CSV = os.path.join(BASE_DIR, "pyData", "Reference", "qfactor_universe.csv")
-OUTPUT_PARQUET = os.path.join(BASE_DIR, "pyData", "Intermediate", "d_qfactor_live.parquet")
+# pyData is at Signals/pyData, not pyCode/pyData, so go up one more level
+UNIVERSE_PKL = os.path.join(BASE_DIR, "..", "pyData", "Static", "sp500_universe.pkl")
+OUTPUT_PARQUET = os.path.join(BASE_DIR, "..", "pyData", "Intermediate", "d_qfactor_live.parquet")
 
 # How far back to build daily factor series - Last 2 years
 LOOKBACK_DAYS = 730  # 2 years (730 days)
@@ -160,25 +161,37 @@ def get_company_by_ticker_or_cik_qfactor(ticker: str) -> Optional:
 # HELPERS
 # -----------------------------------------------------------------------------
 
-def load_universe(path: str) -> pd.DataFrame:
-    """Load ticker universe from CSV. Must have a 'ticker' column."""
+def load_universe(path: str = None) -> pd.DataFrame:
+    """Load ticker universe from pickle file (sp500_universe.pkl)."""
+    import pickle
+    from pathlib import Path
+    
+    # Use pickle file path if not specified
+    if path is None:
+        path = UNIVERSE_PKL
+    
     if not os.path.exists(path):
         raise FileNotFoundError(f"Universe file not found: {path}")
+    
+    try:
+        # Load tickers from pickle file
+        with open(path, 'rb') as f:
+            tickers = pickle.load(f)
+        
+        # Create DataFrame with ticker column
+        uni = pd.DataFrame({'ticker': tickers})
+        uni["ticker"] = (
+            uni["ticker"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+        uni = uni.dropna(subset=["ticker"]).drop_duplicates(subset=["ticker"])
 
-    uni = pd.read_csv(path)
-    if "ticker" not in uni.columns:
-        raise ValueError("Universe CSV must contain a 'ticker' column")
-
-    uni["ticker"] = (
-        uni["ticker"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-    )
-    uni = uni.dropna(subset=["ticker"]).drop_duplicates(subset=["ticker"])
-
-    print(f"Loaded {len(uni)} tickers from universe.", flush=True)
-    return uni
+        print(f"Loaded {len(uni)} tickers from {path}.", flush=True)
+        return uni
+    except Exception as e:
+        raise FileNotFoundError(f"Error loading universe from {path}: {e}")
 
 
 def get_ia_roe_from_edgar(ticker: str):
@@ -575,7 +588,7 @@ def get_risk_free_series(dates: pd.DatetimeIndex) -> pd.Series:
 
 def main():
     # 1) Universe
-    uni = load_universe(UNIVERSE_CSV)
+    uni = load_universe(UNIVERSE_PKL)
     tickers = uni["ticker"].tolist()
 
     # 2) Time window
