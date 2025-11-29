@@ -270,28 +270,51 @@ def download_ticker_monthly(ticker, start_date, end_date, permno, permco):
         # Prepare CRSP-like dataframe
         # Use list comprehension to ensure all columns have same length
         n_rows = len(hist)
+        
+        # Safely convert Volume to numeric, handling NaN and inf
+        volume_series = pd.to_numeric(hist['Volume'], errors='coerce')
+        volume_series = volume_series.replace([np.inf, -np.inf], np.nan)
+        vol_values = (volume_series / 10000).values  # Convert to 100s of shares (CRSP convention)
+        
+        # Ensure numeric columns are properly typed
+        ret_values = pd.to_numeric(hist['ret'], errors='coerce').values
+        retx_values = pd.to_numeric(hist['retx'], errors='coerce').values
+        prc_values = pd.to_numeric(hist['Close'], errors='coerce').values
+        bidlo_values = pd.to_numeric(hist['Low'], errors='coerce').values
+        askhi_values = pd.to_numeric(hist['High'], errors='coerce').values
+        
+        # Ensure integer columns are properly typed before DataFrame creation
+        permno_val = int(permno) if permno is not None else -1
+        permco_val = int(permco) if permco is not None else -1
+        shrcd_val = int(get_share_code(quote_type))
+        exchcd_val = int(get_exchange_code(exchange))
+        sicCRSP_val = int(sic_code) if not pd.isna(sic_code) and sic_code != -1 else -1
+        shares_outstanding_float = float(shares_outstanding_m) if not pd.isna(shares_outstanding_m) else np.nan
+        
         df = pd.DataFrame({
-            'permno': [permno] * n_rows,
-            'permco': [permco] * n_rows,
+            'permno': [permno_val] * n_rows,
+            'permco': [permco_val] * n_rows,
             'time_avail_m': hist.index,
-            'ret': hist['ret'].values,
-            'retx': hist['retx'].values,
-            'vol': (hist['Volume'] / 10000).values,  # Convert to 100s of shares (CRSP convention)
-            'shrout': [shares_outstanding_m] * n_rows,  # In millions
-            'prc': hist['Close'].values,
+            'ret': ret_values,
+            'retx': retx_values,
+            'vol': vol_values,
+            'shrout': [shares_outstanding_float] * n_rows,  # In millions
+            'prc': prc_values,
             'cfacshr': [1.0] * n_rows,  # yfinance provides adjusted prices
-            'bidlo': hist['Low'].values,  # Approximate bid low with monthly low
-            'askhi': hist['High'].values,  # Approximate ask high with monthly high
-            'shrcd': [get_share_code(quote_type)] * n_rows,
-            'exchcd': [get_exchange_code(exchange)] * n_rows,
-            'sicCRSP': [sic_code] * n_rows,
+            'bidlo': bidlo_values,
+            'askhi': askhi_values,
+            'shrcd': [shrcd_val] * n_rows,
+            'exchcd': [exchcd_val] * n_rows,
+            'sicCRSP': [sicCRSP_val] * n_rows,
             'ticker': [ticker] * n_rows,
             'shrcls': [ticker.split('.')[-1] if '.' in ticker else ''] * n_rows,
         })
         
         # Calculate 2-digit SIC (handle NaN and non-numeric values)
         df['sic2D'] = pd.to_numeric(df['sicCRSP'], errors='coerce') / 100
-        df['sic2D'] = df['sic2D'].astype('Int64')
+        # Use nullable Int64 type which handles NaN properly
+        df['sic2D'] = df['sic2D'].astype('float64')  # First convert to float
+        df['sic2D'] = df['sic2D'].round().astype('Int64')  # Then round and convert to nullable Int64
         
         # Calculate market value of equity (millions)
         df['mve_c'] = df['shrout'] * np.abs(df['prc'])

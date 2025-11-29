@@ -51,7 +51,12 @@ print("=" * 60, flush=True)
 # Set Edgar identity (required by SEC)
 if EDGARTOOLS_AVAILABLE:
     # Set your identity - SEC requires this
-    set_identity("Your Name your.email@example.com")
+    edgar_identity = os.getenv('EDGAR_IDENTITY', 'Your Name your.email@example.com')
+    if edgar_identity == 'Your Name your.email@example.com':
+        raise RuntimeError(
+            "EDGAR_IDENTITY env var not set. Set EDGAR_IDENTITY in your .env to an email / app id for SEC access."
+        )
+    set_identity(edgar_identity)
     print("✓ Edgar identity set", flush=True)
 
 
@@ -504,6 +509,87 @@ def diagnose_xbrl_structure(xbrl, max_items=5):
             print(f"  [DEBUG] {stmt} type:", type(obj))
             if hasattr(obj, 'to_dataframe'):
                 print(f"  [DEBUG] {stmt} has to_dataframe()")
+
+
+# =============================================================================
+# TICKER TO CIK MAPPING (FALLBACK FOR EDGARTOOLS LIMITATION)
+# =============================================================================
+
+_ticker_to_cik_cache_annual = None
+
+def get_ticker_to_cik_mapping_annual() -> Dict[str, str]:
+    """
+    Get ticker to CIK mapping from SEC company_tickers.json.
+    Caches the result to avoid repeated downloads.
+    """
+    global _ticker_to_cik_cache_annual
+    
+    if _ticker_to_cik_cache_annual is not None:
+        return _ticker_to_cik_cache_annual
+    
+    url = "https://www.sec.gov/files/company_tickers.json"
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'AP_CompustatAnnual/1.0 (test@example.com)',
+        'Accept': 'application/json'
+    })
+    
+    try:
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        mapping = {}
+        items = data.items() if isinstance(data, dict) else enumerate(data)
+        
+        for _, row in items:
+            if not isinstance(row, dict):
+                continue
+            ticker = row.get("ticker", "").upper().strip()
+            cik = row.get("cik_str") or row.get("cik")
+            if not ticker or cik is None:
+                continue
+            try:
+                cik_str = str(int(cik)).zfill(10)
+                mapping[ticker] = cik_str
+            except (ValueError, TypeError):
+                continue
+        
+        _ticker_to_cik_cache_annual = mapping
+        return mapping
+    except Exception as e:
+        print(f"⚠️  Warning: Could not load SEC ticker mapping: {e}")
+        return {}
+
+
+def get_company_by_ticker_or_cik_annual(ticker: str) -> Optional:
+    """
+    Get Company object by ticker, with CIK fallback.
+    
+    edgartools Company(ticker) sometimes returns None even for valid SEC-registered
+    companies. This function tries ticker first, then falls back to CIK lookup.
+    """
+    # Try direct ticker lookup first
+    try:
+        company = Company(ticker)
+        if company is not None:
+            return company
+    except Exception:
+        pass
+    
+    # Fallback: Look up CIK and try that
+    ticker_to_cik = get_ticker_to_cik_mapping_annual()
+    cik = ticker_to_cik.get(ticker.upper())
+    
+    if cik:
+        try:
+            company = Company(cik)
+            if company is not None:
+                return company
+        except Exception:
+            pass
+    
+    return None
 
 
 def get_company_financials_from_10k(ticker: str, years: int = 2, debug: bool = False) -> pd.DataFrame:
