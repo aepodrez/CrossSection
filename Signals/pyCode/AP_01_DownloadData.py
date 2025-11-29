@@ -108,8 +108,8 @@ def execute_script(script_name, error_log, console_log):
         )
         
         # Set up configurable timeout (convert minutes to seconds)
-        # Special timeout for AP_CRSPAcquisitions.py: 5 hours (300 minutes)
-        if script_name == "AP_CRSPAcquisitions.py":
+        # Special timeout for long-running scripts: 5 hours (300 minutes)
+        if script_name in ["AP_CRSPAcquisitions.py", "AP_CompustatQuarterly.py", "AP_InstitutionalHoldings13F.py"]:
             timeout_minutes = 300  # 5 hours
         else:
             timeout_minutes = SCRIPT_TIMEOUT_MINUTES
