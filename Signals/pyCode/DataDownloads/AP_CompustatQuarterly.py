@@ -94,12 +94,11 @@ XBRL_TAG_MAP = {
     'intanq': ['IntangibleAssetsNetExcludingGoodwill', 'FiniteLivedIntangibleAssetsNet'],
     'gdwlq': ['Goodwill', 'GoodwillAndIntangibleAssetsGross'],
     
-    # Other Assets (max 3 tags)
-    'aoq': ['OtherAssetsNoncurrent', 'OtherAssets'],
-    
     # Short-term Investments (max 4 tags, no fair value disclosures)
     'ivaoq': ['InvestmentsAndOtherNoncurrentAssets', 'OtherLongTermInvestments', 
-              'LongTermInvestments', 'EquityMethodInvestments'],
+              'LongTermInvestments', 'EquityMethodInvestments',
+              'MarketableSecuritiesNoncurrent', 'AvailableForSaleSecuritiesNoncurrent',
+              'LongTermMarketableSecurities', 'InvestmentsAvailableForSaleNoncurrent'],
     
     # ===== BALANCE SHEET - LIABILITIES =====
     
@@ -111,6 +110,7 @@ XBRL_TAG_MAP = {
     
     # Debt - Current
     'dlcq': ['DebtCurrent', 'ShortTermBorrowings', 'ShortTermDebtAndCapitalLeaseObligations',
+             'ShortTermDebt', 'ShortTermDebtAndCurrentMaturitiesOfLongTermDebt',
              'LongTermDebtCurrent', 'ShortTermBankLoansAndNotesPayable', 'CommercialPaper',
              'LineOfCreditCurrent', 'NotesPayableCurrent'],
     
@@ -123,9 +123,9 @@ XBRL_TAG_MAP = {
     'apq': ['AccountsPayableCurrent', 'AccountsPayableAndAccruedLiabilitiesCurrent',
             'AccountsPayableTradeCurrent', 'TradeAndOtherPayablesCurrent'],
     
-    # Taxes Payable
-    'txpq': ['TaxesPayableCurrent', 'AccruedIncomeTaxesCurrent', 'IncomeTaxesPayable',
-             'IncomeTaxesPayableCurrent', 'DeferredTaxLiabilitiesCurrent', 'TaxesPayable'],
+    # Taxes Payable (current only)
+    'txpq': ['IncomeTaxesPayable', 'IncomeTaxesPayableCurrent',
+             'TaxesPayableCurrent', 'AccruedIncomeTaxesCurrent'],
     
     # Other Liabilities
     'lcoq': ['OtherLiabilitiesCurrent', 'AccruedLiabilitiesCurrent', 'OtherAccruedLiabilitiesCurrent',
@@ -153,7 +153,7 @@ XBRL_TAG_MAP = {
     
     # Retained Earnings
     'req': ['RetainedEarningsAccumulatedDeficit', 'RetainedEarnings', 
-            'RetainedEarningsUnappropriated', 'AccumulatedOtherComprehensiveIncomeLossNetOfTax'],
+            'RetainedEarningsUnappropriated'],
     
     # 🔥 CRITICAL: Shares Outstanding at quarter-end ONLY
     # NO weighted average, NO authorized, NO reserved shares
@@ -268,6 +268,45 @@ ZERO_FILL_FIELDS = [
     'ivaoq', 'gdwlq', 'lcoq', 'lctq', 'loq', 'mibq', 'prstkcy',
     'rectq', 'sstky', 'txditcq'
 ]
+
+# Derived-only outputs (no direct XBRL mapping)
+DERIVED_ONLY_FIELDS = ['aoq', 'che_compq', 'cogs_pre_dpq']
+
+# Scope tag mappings to specific statements
+BS_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'atq', 'actq', 'cheq', 'rectq', 'invtq', 'acoq', 'ppentq', 'ppegtq',
+        'intanq', 'gdwlq', 'ivaoq', 'ltq', 'lctq', 'dlcq', 'dlttq', 'apq',
+        'txpq', 'lcoq', 'loq', 'drcq', 'drltq', 'mibq', 'ceqq', 'seqq',
+        'pstkq', 'req', 'cshoq', 'cshprq', 'txditcq'
+    ] if key in XBRL_TAG_MAP
+}
+
+IS_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'revtq', 'saleq', 'cogsq', 'xsgaq', 'xrdq', 'oibdpq', 'oiadpq',
+        'dpq', 'xintq', 'piq', 'txtq', 'txdiq', 'niq', 'ibq', 'epspxq',
+        'epspiq', 'dvpq'
+    ] if key in XBRL_TAG_MAP
+}
+
+CF_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'oancfy', 'ivaoq', 'capxy', 'prstkcy', 'sstky', 'fopty', 'xaccq'
+    ] if key in XBRL_TAG_MAP
+}
+
+OTHER_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'prccq', 'dvy'
+    ] if key in XBRL_TAG_MAP
+}
+
+ALL_FIELDS_MAP = {}
+ALL_FIELDS_MAP.update(BS_FIELDS)
+ALL_FIELDS_MAP.update(IS_FIELDS)
+ALL_FIELDS_MAP.update(CF_FIELDS)
+ALL_FIELDS_MAP.update(OTHER_FIELDS)
 
 
 # =============================================================================
@@ -521,16 +560,30 @@ def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = F
                     statements = xbrl.statements
                     
                     # Helper function to extract value from statement dataframe
-                    def extract_from_statement(df, compustat_field, xbrl_tags):
+                    def extract_from_statement(df, compustat_field, xbrl_tags, period_end):
                         """Extract value from statement dataframe by matching concept column."""
                         if df is None or df.empty:
                             return None
                         
-                        # Get the latest date column (skip 'concept', 'label', etc.)
+                        # Get the date column closest to but not after period_end
                         date_cols = [col for col in df.columns if isinstance(col, str) and '-' in col and len(col) == 10]
                         if not date_cols:
                             return None
-                        latest_col = date_cols[0]  # First date column is usually most recent
+                        date_map = {}
+                        for col in date_cols:
+                            parsed = pd.to_datetime(col, errors='coerce')
+                            if isinstance(parsed, pd.Timestamp) and not pd.isna(parsed):
+                                date_map[parsed] = col
+                        if date_map:
+                            target_period_end = pd.to_datetime(period_end) if period_end is not None else None
+                            if isinstance(target_period_end, pd.Timestamp) and not pd.isna(target_period_end):
+                                candidates = [d for d in date_map.keys() if d <= target_period_end]
+                                target_date = max(candidates) if candidates else max(date_map.keys())
+                            else:
+                                target_date = max(date_map.keys())
+                            target_col = date_map[target_date]
+                        else:
+                            target_col = date_cols[0]
                         
                         # Try each XBRL tag
                         if isinstance(xbrl_tags, str):
@@ -544,7 +597,7 @@ def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = F
                             # Try exact match
                             matches = df[df['concept'] == pattern]
                             if not matches.empty:
-                                val = matches.iloc[0][latest_col]
+                                val = matches.iloc[0][target_col]
                                 if pd.notna(val):
                                     return float(val)
                             
@@ -554,7 +607,7 @@ def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = F
                                 # Filter out abstract items (they're just headers)
                                 non_abstract = matches[matches['abstract'] != True]
                                 if not non_abstract.empty:
-                                    val = non_abstract.iloc[0][latest_col]
+                                    val = non_abstract.iloc[0][target_col]
                                     if pd.notna(val):
                                         return float(val)
                         
@@ -566,9 +619,9 @@ def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = F
                         if hasattr(statements, 'balance_sheet'):
                             bs_df = statements.balance_sheet().to_dataframe()
                         if bs_df is not None and 'concept' in bs_df.columns:
-                            for compustat_field, xbrl_tags in XBRL_TAG_MAP.items():
+                            for compustat_field, xbrl_tags in BS_FIELDS.items():
                                 if compustat_field not in record or record[compustat_field] is None:
-                                    val = extract_from_statement(bs_df, compustat_field, xbrl_tags)
+                                    val = extract_from_statement(bs_df, compustat_field, xbrl_tags, period_end)
                                     if val is not None:
                                         record[compustat_field] = val
                     except Exception as e:
@@ -581,9 +634,9 @@ def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = F
                         if hasattr(statements, 'income_statement'):
                             is_df = statements.income_statement().to_dataframe()
                         if is_df is not None and 'concept' in is_df.columns:
-                            for compustat_field, xbrl_tags in XBRL_TAG_MAP.items():
+                            for compustat_field, xbrl_tags in IS_FIELDS.items():
                                 if compustat_field not in record or record[compustat_field] is None:
-                                    val = extract_from_statement(is_df, compustat_field, xbrl_tags)
+                                    val = extract_from_statement(is_df, compustat_field, xbrl_tags, period_end)
                                     if val is not None:
                                         record[compustat_field] = val
                     except Exception as e:
@@ -598,9 +651,9 @@ def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = F
                         elif hasattr(statements, 'cash_flow'):
                             cf_df = statements.cash_flow().to_dataframe()
                         if cf_df is not None and 'concept' in cf_df.columns:
-                            for compustat_field, xbrl_tags in XBRL_TAG_MAP.items():
+                            for compustat_field, xbrl_tags in CF_FIELDS.items():
                                 if compustat_field not in record or record[compustat_field] is None:
-                                    val = extract_from_statement(cf_df, compustat_field, xbrl_tags)
+                                    val = extract_from_statement(cf_df, compustat_field, xbrl_tags, period_end)
                                     if val is not None:
                                         record[compustat_field] = val
                     except Exception as e:
@@ -608,7 +661,7 @@ def get_company_financials_from_10q(ticker: str, years: int = 2, debug: bool = F
                             print(f"    [DEBUG] Cash flow error: {e}")
                 
                 # Fill in any missing fields with None
-                for field in XBRL_TAG_MAP.keys():
+                for field in list(ALL_FIELDS_MAP.keys()) + DERIVED_ONLY_FIELDS:
                     if field not in record:
                         record[field] = None
                 
@@ -744,6 +797,13 @@ def main():
     df = df.sort_values(['ticker', 'fyearq', 'fqtr', 'filing_date'])
     df = df.groupby(['ticker', 'fyearq', 'fqtr']).last().reset_index()
     print(f"✓ After deduplication: {len(df)} quarterly records")
+
+    # Derived fields (before zero-filling to avoid bias)
+    if {'atq', 'actq'}.issubset(df.columns):
+        df['aoq'] = df['atq'] - df['actq']
+        for comp in ['ppentq', 'ivaoq', 'intanq', 'gdwlq']:
+            if comp in df.columns:
+                df['aoq'] = df['aoq'] - df[comp].fillna(0)
     
     # Calculate data availability timing with 3-month lag assumption
     df['datadate'] = pd.to_datetime(df['datadate'])
@@ -779,6 +839,14 @@ def main():
     # Convert YTD items to quarterly
     print("Converting year-to-date items to quarterly...")
     df = convert_ytd_to_quarterly(df, YTD_FIELDS)
+
+    # Derived helpers
+    if 'cheq' in df.columns:
+        df['che_compq'] = df['cheq'].fillna(0)
+    if 'cogsq' in df.columns:
+        df['cogs_pre_dpq'] = df['cogsq']
+        if 'dpq' in df.columns:
+            df['cogs_pre_dpq'] = df['cogs_pre_dpq'] - df['dpq'].fillna(0)
     
     # Try to add gvkey from CCM linking if available
     print("Attempting to add gvkey from CCM linking...")
@@ -871,4 +939,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

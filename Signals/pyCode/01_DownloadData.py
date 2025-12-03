@@ -41,17 +41,19 @@ def setup_logging():
     return error_log, console_log
 
 def find_download_scripts():
-    """Locate all Python download scripts to execute"""
+    """Locate all Python download scripts to execute (excluding AP_ scripts and test files)"""
     downloads_dir = Path("DataDownloads")
     
     if not downloads_dir.exists():
         print(f"ERROR: {downloads_dir} directory not found")
         return []
     
-    # Find all .py files, excluding __pycache__ and system files
+    # Find all .py files, excluding __pycache__, AP_ scripts, and test files
     py_files = []
     for file in downloads_dir.glob("*.py"):
-        if not file.name.startswith("__"):
+        if (not file.name.startswith("__") and 
+            not file.name.startswith("AP_") and 
+            not file.name.startswith("test_")):
             py_files.append(file.name)
     
     # Sort alphabetically for consistent execution order

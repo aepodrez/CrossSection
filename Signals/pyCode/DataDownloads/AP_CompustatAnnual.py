@@ -7,7 +7,6 @@ Inputs:
 - CCMLinkingTable.parquet (for CRSP linking)
 
 Outputs:
-- ../pyData/Intermediate/AP_CompustatAnnual.csv
 - ../pyData/Intermediate/AP_a_aCompustat.parquet
 - ../pyData/Intermediate/AP_m_aCompustat.parquet
 
@@ -24,6 +23,7 @@ How to run: python AP_CompustatAnnual.py
 """
 
 import os
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -111,13 +111,12 @@ XBRL_TAG_MAP = {
     'gdwlip': ['GoodwillImpairmentLoss'],
     # ❌ GWO (goodwill adjustments) basically not reliably extractable
     
-    # Other Assets (max 3 tags)
-    'ao': ['OtherAssetsNoncurrent', 'OtherAssets'],
-    
     # Short-term Investments (max 4 tags, no fair value disclosures)
     'ivst': ['ShortTermInvestments', 'MarketableSecuritiesCurrent', 'AvailableForSaleSecurities'],
     'ivao': ['InvestmentsAndOtherNoncurrentAssets', 'OtherLongTermInvestments', 
-             'LongTermInvestments', 'EquityMethodInvestments'],
+             'LongTermInvestments', 'EquityMethodInvestments',
+             'MarketableSecuritiesNoncurrent', 'AvailableForSaleSecuritiesNoncurrent',
+             'LongTermMarketableSecurities', 'InvestmentsAvailableForSaleNoncurrent'],
     
     # Fixed Assets Detail (component-level PP&E)
     # STRICT: Buildings & improvements gross only
@@ -135,6 +134,7 @@ XBRL_TAG_MAP = {
     
     # Debt - Current
     'dlc': ['DebtCurrent', 'ShortTermBorrowings', 'ShortTermDebtAndCapitalLeaseObligations',
+            'ShortTermDebt', 'ShortTermDebtAndCurrentMaturitiesOfLongTermDebt',
             'LongTermDebtCurrent', 'ShortTermBankLoansAndNotesPayable', 'CommercialPaper',
             'LineOfCreditCurrent', 'NotesPayableCurrent'],
     
@@ -152,9 +152,9 @@ XBRL_TAG_MAP = {
     'ap': ['AccountsPayableCurrent', 'AccountsPayableAndAccruedLiabilitiesCurrent',
            'AccountsPayableTradeCurrent', 'TradeAndOtherPayablesCurrent'],
     
-    # Taxes Payable
-    'txp': ['TaxesPayableCurrent', 'AccruedIncomeTaxesCurrent', 'IncomeTaxesPayable',
-            'IncomeTaxesPayableCurrent', 'DeferredTaxLiabilitiesCurrent', 'TaxesPayable'],
+    # Taxes Payable (current only - exclude deferred components)
+    'txp': ['IncomeTaxesPayable', 'IncomeTaxesPayableCurrent',
+            'TaxesPayableCurrent', 'AccruedIncomeTaxesCurrent'],
     
     # Other Liabilities
     'lco': ['OtherLiabilitiesCurrent', 'AccruedLiabilitiesCurrent', 'OtherAccruedLiabilitiesCurrent',
@@ -193,7 +193,7 @@ XBRL_TAG_MAP = {
     
     # Retained Earnings
     're': ['RetainedEarningsAccumulatedDeficit', 'RetainedEarnings', 
-           'RetainedEarningsUnappropriated', 'AccumulatedOtherComprehensiveIncomeLossNetOfTax'],
+           'RetainedEarningsUnappropriated'],
     
     # STRICT: Treasury stock value (not share count)
     'tstkp': ['TreasuryStockValue', 'TreasuryStockCommonValue', 'TreasuryStockAtCost'],
@@ -255,9 +255,8 @@ XBRL_TAG_MAP = {
               'OperatingIncome', 'IncomeLossFromContinuingOperations'],
     'oibdp': ['OperatingIncomeLoss', 'OperatingIncome', 'EarningsBeforeInterestAndTaxes'],
     
-    # EBIT & EBITDA
+    # EBIT (EBITDA will be derived)
     'ebit': ['OperatingIncomeLoss', 'EarningsBeforeInterestAndTaxes', 'OperatingIncome'],
-    'ebitda': ['OperatingIncomeLoss'],  # Will be calculated: EBIT + D&A
     
     # Net Income
     'ib': ['NetIncomeLoss', 'ProfitLoss', 'IncomeLossFromContinuingOperations',
@@ -326,9 +325,6 @@ XBRL_TAG_MAP = {
     'sstk': ['ProceedsFromIssuanceOfCommonStock', 'ProceedsFromIssuanceOrSaleOfEquity',
              'StockIssuedDuringPeriodValueNewIssues'],
     
-    # ⚠️ WCAPCH (working capital change) - Unreliable from XBRL, derive: (act-lct) - lag(act-lct)
-    'wcap': ['WorkingCapital'],  # Calculated: Current Assets - Current Liabilities
-    
     # ===== DIVIDENDS =====
     'dvc': ['DividendsCommonStock', 'PaymentsOfDividendsCommonStock', 'PaymentsOfOrdinaryDividends',
             'CommonStockDividendsPerShareDeclared', 'DividendsCash'],
@@ -345,9 +341,9 @@ XBRL_TAG_MAP = {
     'txditc': ['DeferredTaxAssetsLiabilitiesNet', 'DeferredIncomeTaxLiabilities',
                'DeferredTaxAssetsNet', 'DeferredTaxLiabilitiesNoncurrent',
                'DeferredIncomeTaxAssetsNet', 'DeferredIncomeTaxes'],
-    'txp': ['TaxesPayableCurrent', 'AccruedIncomeTaxesCurrent', 'IncomeTaxesPayable',
-            'IncomeTaxesPayableCurrent', 'DeferredTaxLiabilitiesCurrent',
-            'AccruedTaxes', 'TaxesPayableCurrentAndNoncurrent'],
+    # Taxes Payable (current only - exclude deferred components)
+    'txp': ['IncomeTaxesPayable', 'IncomeTaxesPayableCurrent',
+            'TaxesPayableCurrent', 'AccruedIncomeTaxesCurrent'],
     'txdb': ['DeferredTaxAssetsNet', 'DeferredTaxLiabilities', 'DeferredTaxAssetsLiabilitiesNet',
              'DeferredTaxAssetsTaxDeferredExpenseReservesAndAccruals', 'DeferredIncomeTaxLiabilities'],
     'txdi': ['DeferredIncomeTaxExpenseBenefit', 'DeferredFederalStateAndLocalTaxExpenseBenefit',
@@ -365,19 +361,8 @@ XBRL_TAG_MAP = {
     'prcc_c': ['StockPrice', 'SharePrice', 'CommonStockMarketPrice'],
     
     # ===== OTHER ITEMS =====
-    
-    # Employees
-    'emp': ['NumberOfEmployees', 'EmployeeRelatedLiabilitiesCurrent', 
-            'FullTimeEmployees', 'NumberOfFullTimeEmployees'],
-    
-    # Working Capital
-    'wcap': ['WorkingCapital'],  # Usually calculated: act - lct
-    # (wcapch - see earlier definition, marked as unreliable/derive)
-    
     # (ajex - see earlier definition, marked as unmappable)
-    
     # (ceqt - see earlier definition, marked as derive)
-    
     # (dcpstk, dcvt - see earlier definitions, removed duplicates)
 }
 
@@ -397,6 +382,48 @@ FIELDS_TO_DERIVE = {
     'wcapch': '(act - lct) - lag(act - lct)',  # Working capital change
     # ajex - CANNOT derive (Compustat-specific for splits/mergers)
 }
+
+# Fields we always derive (no direct XBRL mapping used)
+DERIVED_ONLY_FIELDS = ['ao', 'ebitda', 'che_comp', 'cogs_pre_dp']
+
+# Scope tag mappings to specific statements to avoid cross-statement contamination
+BS_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'at', 'act', 'che', 'rect', 'recta', 'invt', 'aco', 'ppent', 'ppegt',
+        'ppenb', 'ppenls', 'intan', 'gdwl', 'gdwlia', 'gdwlip', 'ivst',
+        'ivao', 'fatb', 'fatl', 'lt', 'lct', 'dlc', 'dltt', 'ap', 'txp', 'lco',
+        'lo', 'drc', 'drlt', 'dcpstk', 'dcvt', 'mib', 'ceq', 'seq', 'pstk',
+        'pstkl', 're', 'tstkp', 'csho', 'txditc', 'txdb', 'xpp', 'xacc'
+    ] if key in XBRL_TAG_MAP
+}
+
+IS_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'sale', 'revt', 'cogs', 'xsga', 'xad', 'xrd', 'xint', 'dp', 'am',
+        'oiadp', 'oibdp', 'ebit', 'ib', 'ni', 'ibcom', 'nopi', 'pi',
+        'spi', 'fopt', 'ffo', 'epspi', 'epspx', 'txdi', 'txfo', 'txfed', 'txt'
+    ] if key in XBRL_TAG_MAP
+}
+
+CF_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'oancf', 'ivncf', 'fincf', 'capx', 'prstkc', 'scstkc', 'sstk',
+        'dvc', 'dvp', 'dv', 'dvt', 'dvpa', 'dvpd', 'dvpsx_c', 'dlcch',
+        'dltis', 'dltr', 'cshrc'
+    ] if key in XBRL_TAG_MAP
+}
+
+OTHER_FIELDS = {
+    key: XBRL_TAG_MAP[key] for key in [
+        'prcc_f', 'prcc_c'
+    ] if key in XBRL_TAG_MAP
+}
+
+ALL_FIELDS_MAP = {}
+ALL_FIELDS_MAP.update(BS_FIELDS)
+ALL_FIELDS_MAP.update(IS_FIELDS)
+ALL_FIELDS_MAP.update(CF_FIELDS)
+ALL_FIELDS_MAP.update(OTHER_FIELDS)
 
 
 # =============================================================================
@@ -513,6 +540,13 @@ def diagnose_xbrl_structure(xbrl, max_items=5):
             print(f"  [DEBUG] {stmt} type:", type(obj))
             if hasattr(obj, 'to_dataframe'):
                 print(f"  [DEBUG] {stmt} has to_dataframe()")
+
+
+def extract_dei_value(xbrl, tags, debug=False):
+    """
+    Placeholder retained for compatibility; employee extraction removed.
+    """
+    return None, None
 
 
 # =============================================================================
@@ -655,18 +689,37 @@ def get_company_financials_from_10k(ticker: str, years: int = 2, debug: bool = F
                 # Try to get consolidated statements
                 if hasattr(xbrl, 'statements'):
                     statements = xbrl.statements
+                    bs_df = is_df = cf_df = None
                     
                     #Helper function to extract value from statement dataframe
-                    def extract_from_statement(df, compustat_field, xbrl_tags):
+                    def extract_from_statement(df, compustat_field, xbrl_tags, period_end):
                         """Extract value from statement dataframe by matching concept column."""
                         if df is None or df.empty:
-                            return None
+                            return None, None
                         
-                        # Get the latest date column (skip 'concept', 'label', etc.)
+                        # Identify date columns and select the period closest to but <= period_end
                         date_cols = [col for col in df.columns if isinstance(col, str) and '-' in col and len(col) == 10]
                         if not date_cols:
-                            return None
-                        latest_col = date_cols[0]  # First date column is usually most recent
+                            return None, None
+                        
+                        date_map = {}
+                        for col in date_cols:
+                            parsed = pd.to_datetime(col, errors='coerce')
+                            if isinstance(parsed, pd.Timestamp) and not pd.isna(parsed):
+                                date_map[parsed] = col
+                        
+                        target_col = None
+                        if date_map:
+                            target_period_end = pd.to_datetime(period_end) if period_end is not None else None
+                            if isinstance(target_period_end, pd.Timestamp) and not pd.isna(target_period_end):
+                                candidates = [d for d in date_map.keys() if d <= target_period_end]
+                                target_date = max(candidates) if candidates else max(date_map.keys())
+                            else:
+                                target_date = max(date_map.keys())
+                            target_col = date_map[target_date]
+                        else:
+                            # Fallback to prior behavior if parsing fails
+                            target_col = date_cols[0]
                         
                         # Try each XBRL tag
                         if isinstance(xbrl_tags, str):
@@ -677,74 +730,90 @@ def get_company_financials_from_10k(ticker: str, years: int = 2, debug: bool = F
                             # XBRL tags are like 'us-gaap_Assets', 'us-gaap_StockholdersEquity'
                             pattern = f'us-gaap_{tag}'
                             
-                            # Try exact match
-                            matches = df[df['concept'] == pattern]
-                            if not matches.empty:
-                                val = matches.iloc[0][latest_col]
-                                if pd.notna(val):
-                                    return float(val)
+                            search_sets = [
+                                df[df['concept'] == pattern],
+                                df[df['concept'].str.contains(tag, case=False, na=False)]
+                            ]
                             
-                            # Try case-insensitive partial match
-                            matches = df[df['concept'].str.contains(tag, case=False, na=False)]
-                            if not matches.empty:
-                                # Filter out abstract items (they're just headers)
-                                non_abstract = matches[matches['abstract'] != True]
-                                if not non_abstract.empty:
-                                    val = non_abstract.iloc[0][latest_col]
-                                    if pd.notna(val):
-                                        return float(val)
+                            for matches in search_sets:
+                                if matches.empty:
+                                    continue
+                                non_abstract = matches
+                                if 'abstract' in matches.columns:
+                                    non_abstract = matches[matches['abstract'] != True]
+                                if non_abstract.empty:
+                                    continue
+                                val = non_abstract.iloc[0][target_col]
+                                if pd.notna(val):
+                                    used_concept = non_abstract.iloc[0].get('concept', pattern)
+                                    return float(val), str(used_concept)
                         
-                        return None
+                        return None, None
                     
                     # Get balance sheet
                     try:
-                        bs_df = None
                         if hasattr(statements, 'balance_sheet'):
                             bs_df = statements.balance_sheet().to_dataframe()
                         if bs_df is not None and 'concept' in bs_df.columns:
-                            for compustat_field, xbrl_tags in XBRL_TAG_MAP.items():
+                            for compustat_field, xbrl_tags in BS_FIELDS.items():
                                 if compustat_field not in record or record[compustat_field] is None:
-                                    val = extract_from_statement(bs_df, compustat_field, xbrl_tags)
+                                    val, used_tag = extract_from_statement(bs_df, compustat_field, xbrl_tags, period_end)
                                     if val is not None:
                                         record[compustat_field] = val
+                                        if used_tag:
+                                            record[f"_src_{compustat_field}"] = used_tag
                     except Exception as e:
                         if debug:
                             print(f"    [DEBUG] Balance sheet error: {e}")
                     
                     # Get income statement
                     try:
-                        is_df = None
                         if hasattr(statements, 'income_statement'):
                             is_df = statements.income_statement().to_dataframe()
                         if is_df is not None and 'concept' in is_df.columns:
-                            for compustat_field, xbrl_tags in XBRL_TAG_MAP.items():
+                            for compustat_field, xbrl_tags in IS_FIELDS.items():
                                 if compustat_field not in record or record[compustat_field] is None:
-                                    val = extract_from_statement(is_df, compustat_field, xbrl_tags)
+                                    val, used_tag = extract_from_statement(is_df, compustat_field, xbrl_tags, period_end)
                                     if val is not None:
                                         record[compustat_field] = val
+                                        if used_tag:
+                                            record[f"_src_{compustat_field}"] = used_tag
                     except Exception as e:
                         if debug:
                             print(f"    [DEBUG] Income statement error: {e}")
                     
                     # Get cash flow statement
                     try:
-                        cf_df = None
                         if hasattr(statements, 'cashflow_statement'):
                             cf_df = statements.cashflow_statement().to_dataframe()
                         elif hasattr(statements, 'cash_flow'):
                             cf_df = statements.cash_flow().to_dataframe()
                         if cf_df is not None and 'concept' in cf_df.columns:
-                            for compustat_field, xbrl_tags in XBRL_TAG_MAP.items():
+                            for compustat_field, xbrl_tags in CF_FIELDS.items():
                                 if compustat_field not in record or record[compustat_field] is None:
-                                    val = extract_from_statement(cf_df, compustat_field, xbrl_tags)
+                                    val, used_tag = extract_from_statement(cf_df, compustat_field, xbrl_tags, period_end)
                                     if val is not None:
                                         record[compustat_field] = val
+                                        if used_tag:
+                                            record[f"_src_{compustat_field}"] = used_tag
                     except Exception as e:
                         if debug:
                             print(f"    [DEBUG] Cash flow error: {e}")
+
+                    # Fallback: try to pull dp from cash flow statement if missing
+                    try:
+                        if (record.get('dp') is None) and cf_df is not None and 'concept' in cf_df.columns:
+                            val, used_tag = extract_from_statement(cf_df, 'dp', XBRL_TAG_MAP.get('dp', []), period_end)
+                            if val is not None:
+                                record['dp'] = val
+                                if used_tag:
+                                    record["_src_dp"] = used_tag
+                    except Exception as e:
+                        if debug:
+                            print(f"    [DEBUG] DP fallback from CF error: {e}")
                 
                 # Fill in any missing fields with None
-                for field in XBRL_TAG_MAP.keys():
+                for field in list(ALL_FIELDS_MAP.keys()) + DERIVED_ONLY_FIELDS:
                     if field not in record:
                         record[field] = None
                 
@@ -814,6 +883,14 @@ def process_compustat_annual_alternative(df: pd.DataFrame) -> pd.DataFrame:
             df['aco'] = df['aco'].fillna(df['aco_derived'])
         df = df.drop(columns=['aco_derived'], errors='ignore')
     
+    # AO (other noncurrent assets) - derive as residual of noncurrent assets
+    # ao = at - act - ppent - ivao - intan - gdwl - fatb - fatl
+    if 'at' in df.columns and 'act' in df.columns:
+        df['ao'] = df['at'] - df['act']
+        for comp in ['ppent', 'ivao', 'intan', 'gdwl', 'fatb', 'fatl']:
+            if comp in df.columns:
+                df['ao'] = df['ao'] - df[comp].fillna(0)
+    
     # CEQT (common equity) = Total equity - preferred stock - minority interest
     # ceqt = ceq - pstk - mib
     if 'ceq' in df.columns:
@@ -822,19 +899,35 @@ def process_compustat_annual_alternative(df: pd.DataFrame) -> pd.DataFrame:
             df['ceqt'] = df['ceqt'] - df['pstk'].fillna(0)
         if 'mib' in df.columns:
             df['ceqt'] = df['ceqt'] - df['mib'].fillna(0)
+
+    # Ensure EBIT exists (fallback to operating income) and derive EBITDA
+    if 'ebit' not in df.columns or df['ebit'].isna().all():
+        if 'oiadp' in df.columns:
+            df['ebit'] = df['oiadp']
+    if 'ebit' in df.columns:
+        df['ebitda'] = (
+            df['ebit'].fillna(0)
+            + df.get('dp', 0).fillna(0)
+            + df.get('am', 0).fillna(0)
+        )
     
-    # WCAPCH (working capital change) = Δ(Current Assets - Current Liabilities)
-    # wcapch = (act - lct) - lag(act - lct)
+    # Working capital and its change are always derived (XBRL working capital is inconsistent)
+    # wcap = act - lct
+    # wcapch = delta(wcap)
     if 'act' in df.columns and 'lct' in df.columns:
         df = df.sort_values(['ticker', 'fyear'])
-        df['wcap_level'] = df['act'] - df['lct']
-        df['wcapch_derived'] = df.groupby('ticker')['wcap_level'].diff()
-        # If we have direct XBRL mapping, use it; otherwise use derived
-        if 'wcapch' not in df.columns or df['wcapch'].isna().all():
-            df['wcapch'] = df['wcapch_derived']
-        else:
-            df['wcapch'] = df['wcapch'].fillna(df['wcapch_derived'])
-        df = df.drop(columns=['wcap_level', 'wcapch_derived'], errors='ignore')
+        df['wcap'] = df['act'] - df['lct']
+        df['wcapch'] = df.groupby('ticker')['wcap'].diff()
+
+    # Compustat-style cash & equivalents (cash + short-term marketable securities)
+    if 'che' in df.columns or 'ivst' in df.columns:
+        df['che_comp'] = df.get('che', 0).fillna(0) + df.get('ivst', 0).fillna(0)
+
+    # Pre-D&A COGS approximation (Compustat-style)
+    if 'cogs' in df.columns:
+        df['cogs_pre_dp'] = df['cogs']
+        if 'dp' in df.columns:
+            df['cogs_pre_dp'] = df['cogs_pre_dp'] - df['dp'].fillna(0)
     df['xad0'] = df['xad'].fillna(0)
     
     # Fill missing values with zero for specified items
@@ -955,6 +1048,16 @@ def main():
             'JNJ', 'PG', 'MA', 'UNH', 'HD',
         ]
         print(f"\n📊 Processing {len(SAMPLE_TICKERS)} sample tickers...\n")
+
+    # Optional override via CLI arg or environment variable AP_TICKERS
+    override = None
+    if len(sys.argv) > 1:
+        override = sys.argv[1]
+    elif os.getenv("AP_TICKERS"):
+        override = os.getenv("AP_TICKERS")
+    if override:
+        SAMPLE_TICKERS = [t.strip().upper() for t in override.split(',') if t.strip()]
+        print(f"\n📊 Override tickers from input: {', '.join(SAMPLE_TICKERS)}\n")
     
     if not EDGARTOOLS_AVAILABLE:
         print("=" * 60)
@@ -968,7 +1071,7 @@ def main():
         
         # Create sample structure
         all_data = pd.DataFrame(columns=['ticker', 'cik', 'filing_date', 'datadate', 
-                                        'fyear', 'time_avail_m'] + list(XBRL_TAG_MAP.keys()))
+                                        'fyear', 'time_avail_m'] + list(ALL_FIELDS_MAP.keys()) + DERIVED_ONLY_FIELDS)
     else:
         # Fetch data for each ticker
         all_data = []
@@ -998,23 +1101,21 @@ def main():
     # Create output directory
     output_dir = Path("../pyData/Intermediate/")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Save raw CSV
-    csv_data = processed_data.copy()
-    if 'datadate' in csv_data.columns:
-        csv_data['datadate'] = pd.to_datetime(csv_data['datadate']).dt.strftime('%d%b%Y').str.lower()
-    csv_data.to_csv(output_dir / "AP_CompustatAnnual.csv", index=False)
-    print(f"✓ Saved AP_CompustatAnnual.csv ({len(csv_data)} records)")
+    ticker_suffix = f"_{SAMPLE_TICKERS[0]}" if len(SAMPLE_TICKERS) == 1 else ""
     
     # Save annual parquet
     if not processed_data.empty:
-        processed_data.to_parquet(output_dir / "AP_a_aCompustat.parquet", index=False)
-        print(f"✓ Saved AP_a_aCompustat.parquet ({len(processed_data)} records)")
+        annual_base = f"AP_a_aCompustat{ticker_suffix}"
+        processed_data.to_parquet(output_dir / f"{annual_base}.parquet", index=False)
+        processed_data.to_csv(output_dir / f"{annual_base}.csv", index=False)
+        print(f"✓ Saved {annual_base}.parquet and .csv ({len(processed_data)} records)")
         
         # Create and save monthly version
         monthly_data = create_monthly_version(processed_data)
-        monthly_data.to_parquet(output_dir / "AP_m_aCompustat.parquet", index=False)
-        print(f"✓ Saved AP_m_aCompustat.parquet ({len(monthly_data)} records)")
+        monthly_base = f"AP_m_aCompustat{ticker_suffix}"
+        monthly_data.to_parquet(output_dir / f"{monthly_base}.parquet", index=False)
+        monthly_data.to_csv(output_dir / f"{monthly_base}.csv", index=False)
+        print(f"✓ Saved {monthly_base}.parquet and .csv ({len(monthly_data)} records)")
     
     print("\n" + "=" * 60)
     print("✅ AP_CompustatAnnual.py completed successfully")
@@ -1030,4 +1131,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

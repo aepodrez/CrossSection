@@ -1,12 +1,12 @@
 # ABOUTME: Downloads daily stock data using yfinance (free alternative to CRSP Daily)
-# ABOUTME: Creates two output files: full daily data with returns/volume and price-only version
+# ABOUTME: Produces CRSP-like price/return/split factors (cfacpr/cfacshr) and shrout approximations
 """
 Inputs:
 - List of tickers (S&P 500 by default, or user-provided list)
 - yfinance API (free, no authentication required)
 
 Outputs:
-- ../pyData/Intermediate/AP_dailyCRSP.parquet (full daily data with returns, volume, prices)
+- ../pyData/Intermediate/AP_dailyCRSP.parquet (full CRSP-like daily data)
 - ../pyData/Intermediate/AP_dailyCRSPprc.parquet (price-only version)
 
 Requirements:
@@ -135,12 +135,12 @@ def download_ticker_data(ticker, start_date, end_date, permno):
     Returns DataFrame with CRSP-like columns:
     - permno: Numeric identifier (substitute for CRSP permno)
     - time_d: Date
-    - prc: Close price (adjusted for splits/dividends)
-    - ret: Daily return
+    - ret: Daily return using adjusted prices (CRSP-style)
     - vol: Volume
-    - shrout: Shares outstanding (in thousands)
-    - cfacpr: Cumulative adjustment factor for price (always 1.0 with adjusted prices)
-    - cfacshr: Cumulative adjustment factor for shares (calculated from splits)
+    - prc: Raw close (unadjusted, like CRSP PRC)
+    - cfacpr: Cumulative split-only price factor (from split ratios)
+    - shrout: Shares outstanding (approx., in thousands, split-adjusted historically)
+    - cfacshr: Cumulative split-only share factor (back-adjusted)
     """
     try:
         # Download data
@@ -150,41 +150,49 @@ def download_ticker_data(ticker, start_date, end_date, permno):
         if hist.empty:
             print(f"  ⚠️  No data for {ticker}")
             return pd.DataFrame()
-        
-        # Get shares outstanding (from info, single value)
+        # Raw close (CRSP-style prc) and adjusted close (for total return)
+        raw_prc = hist['Close']
+        adj_prc = hist['Adj Close']
+
+        # Daily total return using adjusted prices (includes splits/dividends)
+        ret = adj_prc.pct_change()
+
+        # Split-only price factor: use Stock Splits ratios (new/old); facpr = 1/ratio
+        splits = hist.get('Stock Splits', pd.Series(0, index=hist.index)).fillna(0).astype(float)
+        facpr = pd.Series(1.0, index=hist.index)
+        facpr.loc[splits != 0] = 1.0 / splits.loc[splits != 0]
+        cfacpr = facpr.cumprod()
+
+        # Share factor: forward-time factor = ratio, cumulative toward past via reverse cumprod
+        facshr = pd.Series(1.0, index=hist.index)
+        facshr.loc[splits != 0] = splits.loc[splits != 0]
+        cfacshr = facshr.iloc[::-1].cumprod().iloc[::-1]
+
+        # Approximate historical shrout from latest shares outstanding, back-adjusted by cfacshr
         try:
             shares_outstanding = stock.info.get('sharesOutstanding', np.nan)
             if pd.isna(shares_outstanding) or shares_outstanding == 0:
                 shares_outstanding = stock.info.get('impliedSharesOutstanding', np.nan)
-        except:
+        except Exception:
             shares_outstanding = np.nan
-        
-        # Convert shares to thousands (CRSP convention)
-        shares_outstanding_k = shares_outstanding / 1000 if not pd.isna(shares_outstanding) else np.nan
-        
-        # Calculate returns from adjusted close
-        hist['ret'] = hist['Close'].pct_change()
-        
-        # Prepare CRSP-like dataframe
+        shrout_k = np.nan
+        if not pd.isna(shares_outstanding) and shares_outstanding > 0:
+            shrout_k = shares_outstanding / 1000.0
+            shrout_series = shrout_k / cfacshr
+        else:
+            shrout_series = pd.Series(np.nan, index=hist.index)
+
         df = pd.DataFrame({
             'permno': permno,
             'time_d': hist.index,
-            'prc': hist['Close'],  # Using adjusted close
-            'ret': hist['ret'],
+            'ret': ret,
             'vol': hist['Volume'],
-            'shrout': shares_outstanding_k,  # In thousands
-            'cfacpr': 1.0,  # yfinance provides adjusted prices, so factor is 1.0
-            'cfacshr': 1.0  # Will calculate from splits if available
-        })
-        
-        # Calculate adjustment factor from split data if available
-        if 'Stock Splits' in hist.columns and hist['Stock Splits'].sum() > 0:
-            # Cumulative product of split ratios
-            df['cfacshr'] = (1 + hist['Stock Splits']).cumprod()
-        
-        # Remove first row (has NaN return)
-        df = df.iloc[1:].reset_index(drop=True)
-        
+            'prc': raw_prc,
+            'cfacpr': cfacpr,
+            'shrout': shrout_series,
+            'cfacshr': cfacshr
+        }).reset_index(drop=True)
+
         return df
         
     except Exception as e:
@@ -271,7 +279,7 @@ def save_outputs(combined_data):
     print("\n💾 Saving outputs...")
     
     # 1. Full daily file
-    full_columns = ['permno', 'time_d', 'ret', 'vol', 'prc', 'cfacpr', 'shrout']
+    full_columns = ['permno', 'time_d', 'ret', 'vol', 'prc', 'cfacpr', 'shrout', 'cfacshr']
     daily_full = combined_data[full_columns].copy()
     
     output_file = OUTPUT_DIR / "AP_dailyCRSP.parquet"
@@ -281,7 +289,7 @@ def save_outputs(combined_data):
     print(f"    Size: {output_file.stat().st_size / 1024 / 1024:.1f} MB")
     
     # 2. Price-only file
-    price_columns = ['permno', 'time_d', 'prc', 'cfacpr', 'shrout']
+    price_columns = ['permno', 'time_d', 'prc', 'cfacpr', 'shrout', 'cfacshr']
     daily_prc = combined_data[price_columns].copy()
     
     output_file_prc = OUTPUT_DIR / "AP_dailyCRSPprc.parquet"
@@ -316,7 +324,7 @@ def generate_summary_stats(combined_data):
     
     # Data completeness
     print(f"\n  Data completeness:")
-    for col in ['ret', 'vol', 'prc', 'shrout']:
+    for col in ['ret', 'vol', 'prc', 'shrout', 'cfacpr', 'cfacshr']:
         pct = (1 - combined_data[col].isna().sum() / len(combined_data)) * 100
         print(f"    {col}: {pct:.1f}%")
 
@@ -377,4 +385,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

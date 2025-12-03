@@ -1,5 +1,5 @@
 # ABOUTME: Downloads monthly stock data using yfinance (free alternative to CRSP Monthly)
-# ABOUTME: Processes returns and computes market value of equity
+# ABOUTME: Processes CRSP-like returns, split factors, shares, and market equity
 """
 Inputs:
 - List of tickers (S&P 500 by default, or user-provided list)
@@ -95,6 +95,43 @@ def get_user_ticker_list():
             return df['symbol'].tolist()
     
     return load_sp500_universe()
+
+def load_sic_mapping():
+    """
+    Load precomputed ticker -> SIC mapping from Excel.
+    Expects columns like ['Ticker', 'SIC'].
+    Returns a dict with uppercase ticker keys.
+    """
+    mapping_path = Path("../pyData/Static/ticker_sic_mapping.xlsx")
+    if not mapping_path.exists():
+        print("⚠️  ticker_sic_mapping.xlsx not found; falling back to heuristic SIC mapping")
+        return {}
+    try:
+        data = pd.read_excel(mapping_path)
+        # Try common column names
+        ticker_col = None
+        sic_col = None
+        for col in data.columns:
+            if str(col).strip().lower() in ['ticker', 'tic', 'symbol']:
+                ticker_col = col
+            if str(col).strip().lower() in ['sic', 'siccrsp']:
+                sic_col = col
+        if ticker_col is None or sic_col is None:
+            print("⚠️  ticker_sic_mapping.xlsx missing required columns; falling back to heuristic mapping")
+            return {}
+        mapping = {}
+        for _, row in data.iterrows():
+            tic = row.get(ticker_col)
+            sic = row.get(sic_col)
+            if pd.notna(tic) and pd.notna(sic):
+                try:
+                    mapping[str(tic).upper()] = int(sic)
+                except Exception:
+                    continue
+        return mapping
+    except Exception as e:
+        print(f"⚠️  Could not load ticker_sic_mapping.xlsx: {e}")
+    return {}
 
 def create_ticker_mappings(tickers):
     """
@@ -246,24 +283,33 @@ def download_ticker_monthly(ticker, start_date, end_date, permno, permco):
             industry = ''
             sector = ''
         
-        # Convert shares to millions (CRSP convention)
+        # Convert shares to millions (CRSP monthly uses millions)
         shares_outstanding_m = shares_outstanding / 1_000_000 if not pd.isna(shares_outstanding) else np.nan
         
-        # Calculate returns
-        # ret: Total return (with dividends) = using Adjusted Close
-        # retx: Price return (without dividends) = using Close
-        hist['ret'] = hist['Close'].pct_change()  # With dividends (Close is adjusted)
-        hist['retx'] = (hist['Close'] / hist['Open'] - 1)  # Approximation of ex-dividend return
+        # Returns: total return from Adj Close; ex-dividend from raw Close
+        raw_close = pd.to_numeric(hist['Close'], errors='coerce')
+        adj_close = pd.to_numeric(hist['Adj Close'], errors='coerce')
+        ret = adj_close.pct_change()
+        retx = raw_close.pct_change()
         
-        # For retx, we need to remove dividend impact
-        # Better approximation: use Close/Close[t-1] vs. Adj Close/Adj Close[t-1]
-        close_ret = hist['Close'].pct_change()
-        adj_close_ret = hist['Close'].pct_change()  # Using adjusted close
-        hist['ret'] = adj_close_ret  # Total return
-        hist['retx'] = close_ret  # Approximate ex-dividend return
+        # Split factors for shares: ratio r => factor = r; cumulative toward the past
+        splits = hist.get('Stock Splits', pd.Series(0, index=hist.index)).fillna(0).astype(float)
+        facshr = pd.Series(1.0, index=hist.index)
+        facshr.loc[splits != 0] = splits.loc[splits != 0]
+        cfacshr = facshr.iloc[::-1].cumprod().iloc[::-1]
         
-        # Get SIC code (handle NaN properly)
-        sic_code = map_industry_to_sic(industry, sector)
+        # Approximate historical shrout (millions): back-adjust current shares by cfacshr
+        if not pd.isna(shares_outstanding_m) and shares_outstanding_m > 0:
+            shrout_series = shares_outstanding_m / cfacshr
+        else:
+            shrout_series = pd.Series(np.nan, index=hist.index)
+        
+        # Get SIC code (map first, then fallback to heuristic)
+        sic_code = None
+        if 'sic_map' in globals() and isinstance(globals()['sic_map'], dict):
+            sic_code = globals()['sic_map'].get(ticker.upper())
+        if sic_code is None:
+            sic_code = map_industry_to_sic(industry, sector)
         if pd.isna(sic_code):
             sic_code = -1  # Use -1 for unknown instead of NaN
         
@@ -271,17 +317,18 @@ def download_ticker_monthly(ticker, start_date, end_date, permno, permco):
         # Use list comprehension to ensure all columns have same length
         n_rows = len(hist)
         
-        # Safely convert Volume to numeric, handling NaN and inf
-        volume_series = pd.to_numeric(hist['Volume'], errors='coerce')
-        volume_series = volume_series.replace([np.inf, -np.inf], np.nan)
-        vol_values = (volume_series / 10000).values  # Convert to 100s of shares (CRSP convention)
+        # Safely convert Volume to numeric, handling NaN and inf (keep raw shares)
+        volume_series = pd.to_numeric(hist['Volume'], errors='coerce').replace([np.inf, -np.inf], np.nan)
+        vol_values = volume_series.values
         
         # Ensure numeric columns are properly typed
-        ret_values = pd.to_numeric(hist['ret'], errors='coerce').values
-        retx_values = pd.to_numeric(hist['retx'], errors='coerce').values
-        prc_values = pd.to_numeric(hist['Close'], errors='coerce').values
+        ret_values = pd.to_numeric(ret, errors='coerce').values
+        retx_values = pd.to_numeric(retx, errors='coerce').values
+        prc_values = pd.to_numeric(raw_close, errors='coerce').values
         bidlo_values = pd.to_numeric(hist['Low'], errors='coerce').values
         askhi_values = pd.to_numeric(hist['High'], errors='coerce').values
+        cfacshr_values = pd.to_numeric(cfacshr, errors='coerce').values
+        shrout_values = pd.to_numeric(shrout_series, errors='coerce').values
         
         # Ensure integer columns are properly typed before DataFrame creation
         permno_val = int(permno) if permno is not None else -1
@@ -298,9 +345,9 @@ def download_ticker_monthly(ticker, start_date, end_date, permno, permco):
             'ret': ret_values,
             'retx': retx_values,
             'vol': vol_values,
-            'shrout': [shares_outstanding_float] * n_rows,  # In millions
+            'shrout': shrout_values,  # In millions, back-adjusted by split factor
             'prc': prc_values,
-            'cfacshr': [1.0] * n_rows,  # yfinance provides adjusted prices
+            'cfacshr': cfacshr_values,
             'bidlo': bidlo_values,
             'askhi': askhi_values,
             'shrcd': [shrcd_val] * n_rows,
@@ -311,10 +358,7 @@ def download_ticker_monthly(ticker, start_date, end_date, permno, permco):
         })
         
         # Calculate 2-digit SIC (handle NaN and non-numeric values)
-        df['sic2D'] = pd.to_numeric(df['sicCRSP'], errors='coerce') / 100
-        # Use nullable Int64 type which handles NaN properly
-        df['sic2D'] = df['sic2D'].astype('float64')  # First convert to float
-        df['sic2D'] = df['sic2D'].round().astype('Int64')  # Then round and convert to nullable Int64
+        df['sic2D'] = (pd.to_numeric(df['sicCRSP'], errors='coerce') // 100).astype('Int64')
         
         # Calculate market value of equity (millions)
         df['mve_c'] = df['shrout'] * np.abs(df['prc'])
@@ -501,6 +545,10 @@ def main():
     else:
         tickers = get_user_ticker_list()
     
+    # Load SIC mapping (optional)
+    global sic_map
+    sic_map = load_sic_mapping()
+    
     # Create ticker mappings
     ticker_mappings = create_ticker_mappings(tickers)
     
@@ -538,4 +586,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
