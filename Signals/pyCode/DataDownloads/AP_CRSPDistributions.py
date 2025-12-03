@@ -89,11 +89,19 @@ def classify_distribution(row):
     """
     Classify distribution type based on available information.
     Returns CRSP-like distribution code.
+    
+    For dividends, we use a price-based heuristic:
+    - If divamt / price_on_or_before_exdt > 5%, treat as special cash dividend (1262)
+    - Otherwise regular cash dividend (1232)
+    
+    For splits, facshr = new_shares / old_shares:
+    - facshr > 1.0  => forward split (5523)
+    - facshr < 1.0  => reverse split (5533)
     """
     # For dividends
     if 'Dividends' in row['type']:
         # Heuristic: if dividend > 5% of price, treat as special
-        if pd.notna(row.get('divamt')) and pd.notna(row.get('prc')):
+        if pd.notna(row.get('divamt')) and pd.notna(row.get('prc')) and row.get('prc') > 0:
             if row['divamt'] / row['prc'] > 0.05:
                 return DISTCD_SPECIAL_DIVIDEND
         return DISTCD_CASH_DIVIDEND
@@ -188,7 +196,10 @@ def download_distributions_for_ticker(ticker, start_date, end_date, permno):
     """
     try:
         stock = yf.Ticker(ticker)
-        
+        # Pull price history to evaluate dividends vs price (for special/regular classification)
+        price_hist = stock.history(start=start_date, end=end_date, auto_adjust=False)
+        price_series = price_hist['Close'].sort_index().ffill()
+
         # Get dividends
         dividends = stock.dividends
         splits = stock.splits
@@ -200,14 +211,22 @@ def download_distributions_for_ticker(ticker, start_date, end_date, permno):
             divs = dividends[(dividends.index >= start_date) & (dividends.index <= end_date)]
             
             for date, amount in divs.items():
+                # Price on or immediately prior to ex-date for special vs regular heuristic
+                prc = np.nan
+                try:
+                    sub = price_series.loc[:date]
+                    if not sub.empty:
+                        prc = sub.iloc[-1]
+                except Exception:
+                    prc = np.nan
                 all_distributions.append({
                     'permno': permno,
                     'ticker': ticker,
                     'exdt': pd.to_datetime(date),
                     'divamt': amount,
-                    'facshr': 1.0,  # No share adjustment for dividends
+                    'facshr': 1.0,  # Dividends do not change share count
                     'type': 'Dividends',
-                    'prc': None  # Will fill if needed for classification
+                    'prc': prc
                 })
         
         # Process stock splits
@@ -215,6 +234,7 @@ def download_distributions_for_ticker(ticker, start_date, end_date, permno):
             splt = splits[(splits.index >= start_date) & (splits.index <= end_date)]
             
             for date, ratio in splt.items():
+                # facshr = new_shares / old_shares (e.g., 2-for-1 => 2.0)
                 all_distributions.append({
                     'permno': permno,
                     'ticker': ticker,
@@ -231,9 +251,9 @@ def download_distributions_for_ticker(ticker, start_date, end_date, permno):
         df = pd.DataFrame(all_distributions)
         
         # Estimate record and payment dates
-        # CRSP convention: record date ~1-2 days before ex-date, payment ~2-4 weeks after
-        df['rcrddt'] = df['exdt'] - pd.Timedelta(days=1)  # Record date before ex-date
-        df['paydt'] = df['exdt'] + pd.Timedelta(days=14)  # Payment ~2 weeks after
+        # Approximation: record date shortly after ex-date; payment ~2 weeks after record
+        df['rcrddt'] = df['exdt'] + pd.Timedelta(days=1)
+        df['paydt'] = df['rcrddt'] + pd.Timedelta(days=14)
         
         # Assign distribution codes
         df['distcd'] = df.apply(classify_distribution, axis=1)
@@ -469,4 +489,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
