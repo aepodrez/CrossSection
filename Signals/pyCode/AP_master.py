@@ -122,6 +122,15 @@ def main():
     except subprocess.CalledProcessError as e:
         print(f"ERROR in AP data downloads: {e}")
         sys.exit(1)
+
+    # Build AP Signal Master Table (same timing as master.py does for original data)
+    print("\n2. Building AP Signal Master Table...")
+    try:
+        result = subprocess.run([sys.executable, "-u", "AP_SignalMasterTable.py"], check=True)
+        print("✓ AP Signal Master Table completed")
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR building AP Signal Master Table: {e}")
+        sys.exit(1)
     
     print("\n" + "=" * 60)
     print("AP Master script completed successfully!")
@@ -130,4 +139,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

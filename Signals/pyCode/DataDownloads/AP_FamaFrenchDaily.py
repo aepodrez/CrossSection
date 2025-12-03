@@ -2,7 +2,7 @@
 # ABOUTME: Recreates daily Fama-French-style factors using free live data
 """
 Inputs:
-- ../pyData/Static/ff3_portfolios.csv
+- ../../pyData/Static/ff3_portfolios.csv
   (ticker, size_port {S,B}, bm_port {L,M,H}, mom_port {L,M,W})
 
 - Free data sources at runtime:
@@ -10,7 +10,7 @@ Inputs:
   - FRED (risk-free rate, optional)
 
 Outputs:
-- ../pyData/Intermediate/dailyFF.parquet
+- ../../pyData/Intermediate/AP_dailyFF.parquet
 
 How to run (after market close):
     python3 FamaFrenchDaily_Live.py
@@ -55,8 +55,12 @@ load_dotenv()
 # Config
 # ------------------------------------------------------------------------------
 
-PORTFOLIO_FILE = "../pyData/Static/ff3_portfolios.csv"
-OUTPUT_FILE = "../pyData/Intermediate/dailyFF.parquet"
+# Use paths relative to this script file
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # Go up to Signals/
+
+PORTFOLIO_FILE = os.path.join(BASE_DIR, "pyData", "Static", "ff3_portfolios.csv")
+OUTPUT_FILE = os.path.join(BASE_DIR, "pyData", "Intermediate", "AP_dailyFF.parquet")
 PORTFOLIO_SCRIPT = "AP_BuildFFPortfolios.py"
 
 # How far back to build history if OUTPUT_FILE doesn't exist yet - Last 2 years

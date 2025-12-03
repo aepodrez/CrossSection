@@ -3,7 +3,7 @@
 #          using free live data and previously built FF-style portfolio assignments.
 """
 Inputs:
-- ../pyData/Static/ff3_portfolios.csv
+- ../../pyData/Static/ff3_portfolios.csv
     Columns:
         - ticker
         - size_port in {S, B}
@@ -16,7 +16,7 @@ External live data fetched at runtime:
 - FRED 3-month T-bill rate (TB3MS) via pandas_datareader (if installed)
 
 Outputs:
-- ../pyData/Intermediate/monthlyFF.parquet
+- ../../pyData/Intermediate/AP_monthlyFF.parquet
     Columns:
         - time_avail_m (first day of month, datetime64)
         - mktrf
@@ -69,8 +69,12 @@ print("=" * 60, flush=True)
 # Config
 # ------------------------------------------------------------------------------
 
-PORTFOLIO_FILE = "../pyData/Static/ff3_portfolios.csv"
-OUTPUT_FILE = "../pyData/Intermediate/monthlyFF.parquet"
+# Use paths relative to this script file
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # Go up to Signals/
+
+PORTFOLIO_FILE = os.path.join(BASE_DIR, "pyData", "Static", "ff3_portfolios.csv")
+OUTPUT_FILE = os.path.join(BASE_DIR, "pyData", "Intermediate", "AP_monthlyFF.parquet")
 
 # How far back to build history if file doesn't exist
 DEFAULT_START_DATE = "2015-01-01"
@@ -124,36 +128,105 @@ def determine_month_range(output_path: str, default_start: str) -> tuple[dt.date
 
 def download_daily_prices(tickers, start_date: dt.date, end_date: dt.date) -> pd.DataFrame:
     """
-    Download daily adjusted close prices for tickers from Yahoo Finance.
-    Returns long DataFrame: [time_d, ticker, adj_close].
+    Download adjusted close prices for tickers from Yahoo Finance.
+    Returns a long DataFrame: [time_d, ticker, adj_close].
+    Handles partial failures gracefully - continues with successfully downloaded tickers.
     """
     if len(tickers) == 0:
         raise ValueError("No tickers in portfolio assignments.")
 
-    log(f"Downloading daily prices for {len(tickers)} tickers from {start_date} to {end_date}...")
-    data = yf.download(
-        tickers=tickers,
-        start=start_date,
-        end=end_date + dt.timedelta(days=1),
-        auto_adjust=True,
-        group_by="ticker",
-        progress=False,
-        threads=True,
-    )
-
-    if isinstance(data.columns, pd.MultiIndex):
-        closes = {}
-        for t in tickers:
-            if (t, "Adj Close") in data.columns:
-                closes[t] = data[(t, "Adj Close")]
-        close_df = pd.DataFrame(closes)
+    log(f"Downloading prices from Yahoo Finance for {len(tickers)} tickers...")
+    
+    # Try batch download first
+    try:
+        data = yf.download(
+            tickers=tickers,
+            start=start_date,
+            end=end_date + dt.timedelta(days=1),  # yfinance end is exclusive
+            auto_adjust=True,
+            group_by="ticker",
+            progress=False,
+            threads=True,
+            timeout=30,  # Increase timeout
+        )
+    except Exception as e:
+        log(f"⚠️  Batch download encountered errors, trying individual downloads...")
+        data = None
+    
+    # If batch download failed or returned empty, try individual downloads
+    if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+        log(f"   Downloading tickers individually (this may take longer)...")
+        all_closes = {}
+        successful = 0
+        failed = []
+        
+        for ticker in tickers:
+            try:
+                ticker_data = yf.download(
+                    tickers=ticker,
+                    start=start_date,
+                    end=end_date + dt.timedelta(days=1),
+                    auto_adjust=True,
+                    progress=False,
+                    timeout=30,
+                )
+                # When auto_adjust=True, yfinance returns "Close" (already adjusted)
+                if not ticker_data.empty:
+                    if 'Close' in ticker_data.columns:
+                        all_closes[ticker] = ticker_data['Close']
+                        successful += 1
+                    elif 'Adj Close' in ticker_data.columns:
+                        all_closes[ticker] = ticker_data['Adj Close']
+                        successful += 1
+                    else:
+                        failed.append(ticker)
+                else:
+                    failed.append(ticker)
+            except Exception as e:
+                failed.append(ticker)
+                if len(failed) <= 5:  # Only print first 5 failures
+                    error_msg = str(e)[:100] if len(str(e)) > 100 else str(e)
+                    log(f"   ⚠️  Failed to download {ticker}: {error_msg}")
+                continue
+        
+        if all_closes:
+            close_df = pd.DataFrame(all_closes)
+            log(f"   ✓ Successfully downloaded {successful}/{len(tickers)} tickers")
+            if failed:
+                log(f"   ⚠️  Failed: {len(failed)} tickers")
+        else:
+            close_df = pd.DataFrame()
     else:
-        close_df = data["Adj Close"].to_frame()
-        close_df.columns = tickers
+        # Process batch download results
+        # yfinance shape depends on single vs multi ticker; normalize
+        # We will extract a panel: index = date, columns = tickers (Adj Close)
+        if isinstance(data.columns, pd.MultiIndex):
+            closes = {}
+            for t in tickers:
+                # When auto_adjust=True, use "Close" (already adjusted)
+                if (t, "Close") in data.columns:
+                    closes[t] = data[(t, "Close")]
+                elif (t, "Adj Close") in data.columns:
+                    closes[t] = data[(t, "Adj Close")]
+            close_df = pd.DataFrame(closes)
+        else:
+            # Single ticker
+            if "Close" in data.columns:
+                close_df = data["Close"].to_frame()
+            elif "Adj Close" in data.columns:
+                close_df = data["Adj Close"].to_frame()
+            else:
+                close_df = pd.DataFrame()
+            if not close_df.empty:
+                close_df.columns = tickers
 
+    if close_df.empty:
+        return pd.DataFrame()
+    
     close_df = close_df.dropna(how="all")
     close_df.index.name = "time_d"
 
+    # Melt to long form for joining later
     long = close_df.stack().reset_index()
     long.columns = ["time_d", "ticker", "adj_close"]
     long["ticker"] = long["ticker"].astype(str).str.upper()
@@ -367,16 +440,27 @@ def main():
     shares_map = get_shares_outstanding(tickers)
     monthly = compute_monthly_returns_and_caps(price_daily, shares_map)
 
+    if monthly.empty:
+        log("⚠️  No monthly returns computed from price data.")
+        log(f"   Price data date range: {price_daily['time_d'].min()} to {price_daily['time_d'].max()}")
+        return
+
     # Filter to months within [start_date, end_date]
     first_month = pd.Period(start_date, freq="M")
     last_month = pd.Period(end_date, freq="M")
-    monthly = monthly[
+    log(f"Filtering monthly returns: {first_month} to {last_month}")
+    log(f"   Monthly data available: {monthly['month'].min()} to {monthly['month'].max()}")
+    monthly_filtered = monthly[
         (monthly["month"] >= first_month) & (monthly["month"] <= last_month)
     ].copy()
 
-    if monthly.empty:
+    if monthly_filtered.empty:
         log("No monthly returns in the requested range.")
+        log(f"   Requested: {first_month} to {last_month}")
+        log(f"   Available: {monthly['month'].min()} to {monthly['month'].max()}")
         return
+    
+    monthly = monthly_filtered
 
     # Optional debug: limit number of months
     if ROW_LIMIT and ROW_LIMIT > 0:

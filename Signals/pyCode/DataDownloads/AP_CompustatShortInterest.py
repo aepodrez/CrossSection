@@ -1,17 +1,16 @@
-# ABOUTME: Downloads and processes short interest data from FINRA (free alternative to Compustat)
-# ABOUTME: Uses FINRA short sale volume data and matches to tickers via CUSIP/ticker mapping
+# ABOUTME: Downloads and processes equity short interest positions from FINRA (free alternative to Compustat)
+# ABOUTME: Uses FINRA bi-monthly short interest positions and matches to gvkeys via AP_CompustatAnnual
 """
 Inputs:
-- FINRA short sale volume data (free download)
-- AP_CRSPMonthly.parquet or CCMLinkingTable.parquet (for ticker/CUSIP mapping)
-- AP_CompustatAnnual.parquet (for gvkey mapping, optional)
+- FINRA equity short interest positions (bi-monthly, free download)
+- AP_CompustatAnnual.parquet (for ticker/gvkey mapping)
 
 Outputs:
 - ../pyData/Intermediate/AP_monthlyShortInterest.parquet
 
 Data Sources:
-- FINRA Short Sale Volume Data: https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data
-- Available from 2010 onwards (daily data)
+- FINRA Equity Short Interest Positions: https://www.finra.org/finra-data/browse-catalog/equity-short-interest/files
+- Available from Dec 2017 onwards (bi-monthly files such as shrtYYYYMMDD.csv)
 - Free and publicly available
 
 How to run: python AP_CompustatShortInterest.py
@@ -26,8 +25,9 @@ import sys
 import time
 import pandas as pd
 import numpy as np
+import re
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict
 from io import StringIO
 import warnings
@@ -43,7 +43,7 @@ except ImportError:
 
 # Print script header
 print("=" * 60, flush=True)
-print("📊 AP_CompustatShortInterest.py - Live FINRA Short Interest", flush=True)
+print("📊 AP_CompustatShortInterest.py - FINRA Equity Short Interest Positions", flush=True)
 print("=" * 60, flush=True)
 
 
@@ -51,150 +51,155 @@ print("=" * 60, flush=True)
 # FINRA DATA DOWNLOAD FUNCTIONS
 # =============================================================================
 
-def download_finra_short_interest(date: str) -> Optional[pd.DataFrame]:
+FINRA_FILES_PAGE = "https://www.finra.org/finra-data/browse-catalog/equity-short-interest/files?custom_month%5Bmonth%5D=any&custom_year%5Byear%5D=any"
+
+
+def list_finra_short_interest_files() -> pd.DataFrame:
     """
-    Download FINRA short sale volume data for a specific date.
+    Scrape FINRA's Equity Short Interest files page to enumerate available CSVs.
     
-    FINRA provides daily short sale volume data in CSV format.
-    Correct URL format (Consolidated NMS file):
-        https://cdn.finra.org/equity/regsho/daily/CNMSshvolYYYYMMDD.txt
+    Returns:
+        DataFrame with columns: settlement_str (YYYYMMDD), settlementDate (datetime), url
+    """
+    if not REQUESTS_AVAILABLE:
+        return pd.DataFrame()
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    try:
+        print(f"  Fetching FINRA files page: {FINRA_FILES_PAGE}", flush=True)
+        resp = requests.get(FINRA_FILES_PAGE, headers=headers, timeout=45)
+        print(f"  Response status: {resp.status_code}, length: {len(resp.text)} chars", flush=True)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️  Could not fetch FINRA files list: {e}")
+        return pd.DataFrame()
+    
+    # Pattern captures full URL and settlement date (YYYYMMDD)
+    # Primary: explicit CDN links
+    pattern_full = r"(https?:)?//cdn\.finra\.org/[\w/.-]*shrt(\d{8})\.csv"
+    matches = []
+    for m in re.finditer(pattern_full, resp.text):
+        full_url = m.group(0)
+        if full_url.startswith("//"):
+            full_url = "https:" + full_url
+        date_str = m.group(2)
+        matches.append((full_url, date_str))
+    
+    # Fallback: find just shrtYYYYMMDD.csv tokens and reconstruct CDN URL
+    if not matches:
+        dates_only = re.findall(r"shrt(\d{8})\.csv", resp.text)
+        if dates_only:
+            print(f"  Found {len(set(dates_only))} shrtYYYYMMDD tokens; constructing CDN URLs", flush=True)
+            matches = [("https://cdn.finra.org/equity/otcmarket/biweekly/shrt" + d + ".csv", d) for d in set(dates_only)]
+        else:
+            print("⚠️  No FINRA short interest file links found on the page.")
+            snippet = resp.text[:1000] if resp.text else "<empty page>"
+            print("⚠️  Page snippet (first 1000 chars) to help debugging:\n")
+            print(snippet)
+            # Write full page to disk for inspection
+            debug_path = Path("../pyData/Intermediate/AP_finra_short_interest_page.html")
+            try:
+                debug_path.parent.mkdir(parents=True, exist_ok=True)
+                debug_path.write_text(resp.text, encoding="utf-8")
+                print(f"⚠️  Saved full page HTML to {debug_path} for manual inspection.")
+            except Exception as e:
+                print(f"⚠️  Could not save debug HTML: {e}")
+            return pd.DataFrame()
+    
+    seen: Dict[str, str] = {}
+    for entry in matches:
+        url, date_str = entry
+        seen[date_str] = url  # keep latest occurrence
+    
+    records = []
+    for date_str, url in seen.items():
+        try:
+            dt = datetime.strptime(date_str, "%Y%m%d")
+        except ValueError:
+            dt = pd.NaT
+        records.append({"settlement_str": date_str, "settlementDate": dt, "url": url})
+    
+    file_df = pd.DataFrame(records)
+    file_df = file_df.sort_values("settlementDate").reset_index(drop=True)
+    
+    if not file_df.empty:
+        min_date = file_df["settlementDate"].min()
+        max_date = file_df["settlementDate"].max()
+        print(f"✓ Found {len(file_df)} FINRA short interest files ({min_date.date()} to {max_date.date()})")
+    
+    return file_df
+
+
+def download_finra_short_interest_file(url: str, settlement_hint: Optional[str] = None) -> Optional[pd.DataFrame]:
+    """
+    Download a single FINRA short interest positions file.
     
     Args:
-        date: Date in YYYYMMDD format
+        url: Direct CSV URL (e.g., https://cdn.finra.org/equity/otcmarket/biweekly/shrt20251114.csv)
+        settlement_hint: Fallback settlement date string (YYYYMMDD) if column missing
         
     Returns:
-        DataFrame with short interest data, or None if download fails
+        Raw DataFrame or None on failure
     """
     if not REQUESTS_AVAILABLE:
         return None
     
-    # ✅ Correct URL (no date subfolder)
-    url = f"https://cdn.finra.org/equity/regsho/daily/CNMSshvol{date}.txt"
-    
-    # Simple headers - CDN endpoints usually work with minimal headers
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
     try:
-        print(f"  Downloading FINRA data for {date}...", flush=True)
-        
-        # Add small delay to avoid rate limiting
-        time.sleep(0.5)
-        
-        response = requests.get(url, headers=headers, timeout=30)
-        
-        # Handle 404 (holiday/non-trading day) gracefully
-        if response.status_code == 404:
-            print(f"    ⚠️  No file for {date} (likely holiday/non-trading day)")
+        print(f"  Downloading {url} ...", flush=True)
+        time.sleep(0.2)
+        resp = requests.get(url, headers=headers, timeout=60)
+        if resp.status_code == 404:
+            print(f"    ⚠️  File not found: {url}")
             return None
-        
-        # Handle 403 Forbidden errors
-        if response.status_code == 403:
-            print(f"    ⚠️  Could not download {date}: 403 Forbidden")
-            return None
-        
-        response.raise_for_status()
-        
-        # Read from response content (avoid double request)
-        # FINRA files have header in first line: Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market
-        df = pd.read_csv(
-            StringIO(response.text),
-            sep='|',
-            header=0,  # First line is the header
-            dtype=str
-        )
-        
-        # Clean column names (remove whitespace)
+        resp.raise_for_status()
+        df = pd.read_csv(StringIO(resp.text), sep="|", dtype=str)
         df.columns = df.columns.str.strip()
-        
-        # Expected columns: Date, Symbol, ShortVolume, ShortExemptVolume, TotalVolume, Market
-        # Check for ShortVolume column (case-insensitive)
-        has_short_volume = any('ShortVolume' in col or 'Short Volume' in col or 'shortvolume' in col.lower() 
-                              for col in df.columns)
-        
-        if has_short_volume or 'Symbol' in df.columns:
-            return df
-        else:
-            print(f"    ⚠️  Unexpected column format for {date}")
-            print(f"       Columns found: {df.columns.tolist()}")
-            return None
-            
+        if settlement_hint and "settlementDate" not in df.columns:
+            df["settlementDate"] = settlement_hint
+        return df
     except requests.exceptions.RequestException as e:
-        print(f"    ⚠️  Could not download {date}: {e}")
+        print(f"    ⚠️  Network error for {url}: {e}")
         return None
     except Exception as e:
-        print(f"    ⚠️  Error processing {date}: {e}")
+        print(f"    ⚠️  Error parsing {url}: {e}")
         return None
-
-
-def download_finra_monthly(year: int, month: int) -> pd.DataFrame:
-    """
-    Download all FINRA short interest data for a given month.
-    
-    Args:
-        year: Year (e.g., 2024)
-        month: Month (1-12)
-        
-    Returns:
-        Combined DataFrame for the month
-    """
-    # Get all dates in the month
-    start_date = datetime(year, month, 1)
-    if month == 12:
-        end_date = datetime(year + 1, 1, 1)
-    else:
-        end_date = datetime(year, month + 1, 1)
-    
-    all_data = []
-    current_date = start_date
-    
-    while current_date < end_date:
-        # Skip weekends (FINRA data is only for trading days)
-        if current_date.weekday() < 5:  # Monday = 0, Friday = 4
-            date_str = current_date.strftime('%Y%m%d')
-            daily_data = download_finra_short_interest(date_str)
-            if daily_data is not None and not daily_data.empty:
-                daily_data['date'] = current_date
-                all_data.append(daily_data)
-        
-        current_date += timedelta(days=1)
-    
-    if all_data:
-        return pd.concat(all_data, ignore_index=True)
-    else:
-        return pd.DataFrame()
 
 
 def process_finra_data(finra_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Process raw FINRA data into standardized format.
+    Process raw FINRA short interest positions into standardized format.
     
     Args:
-        finra_df: Raw FINRA DataFrame
+        finra_df: Raw FINRA DataFrame from CDN
         
     Returns:
-        Processed DataFrame with standardized columns
+        Processed DataFrame with columns: ticker, date, short_interest
     """
     if finra_df.empty:
         return pd.DataFrame()
     
     df = finra_df.copy()
     
-    # Standardize column names (FINRA format may vary)
+    # Standardize column names (FINRA format may vary slightly across vintages)
     column_mapping = {
         'Symbol': 'ticker',
+        'symbolCode': 'ticker',
         'symbol': 'ticker',
         'SYMBOL': 'ticker',
-        'ShortVolume': 'short_volume',
-        'Short Volume': 'short_volume',
-        'SHORT_VOLUME': 'short_volume',
-        'TotalVolume': 'total_volume',
-        'Total Volume': 'total_volume',
-        'TOTAL_VOLUME': 'total_volume',
-        'Date': 'date',
-        'date': 'date',
-        'DATE': 'date',
+        'Ticker': 'ticker',
+        'currentShortPositionQuantity': 'short_interest',
+        'currentShortPositionQty': 'short_interest',
+        'shortPosition': 'short_interest',
+        'settlementDate': 'settlementDate',
+        'SettlementDate': 'settlementDate',
+        'accountingYearMonthNumber': 'accountingYearMonthNumber',
     }
     
     # Rename columns
@@ -203,52 +208,41 @@ def process_finra_data(finra_df: pd.DataFrame) -> pd.DataFrame:
             df = df.rename(columns={old_col: new_col})
     
     # Ensure we have required columns
-    if 'ticker' not in df.columns or 'short_volume' not in df.columns:
+    if 'ticker' not in df.columns or ('short_interest' not in df.columns and 'currentShortPositionQuantity' not in df.columns):
         print("⚠️  Missing required columns in FINRA data")
         return pd.DataFrame()
     
-    # Convert date if it's a string
-    if 'date' in df.columns:
-        # Safely access the date column
-        try:
-            date_col = df['date']
-            # Check if it's a Series (normal case)
-            if isinstance(date_col, pd.Series):
-                if date_col.dtype == 'object' or str(date_col.dtype) == 'string':
-                    df['date'] = pd.to_datetime(date_col, errors='coerce')
-            # If it's somehow a DataFrame, take the first column
-            elif isinstance(date_col, pd.DataFrame):
-                if len(date_col.columns) > 0:
-                    df['date'] = pd.to_datetime(date_col.iloc[:, 0], errors='coerce')
-        except (KeyError, AttributeError) as e:
-            # If there's an issue accessing the column, skip date conversion
-            print(f"⚠️  Warning: Could not process date column: {e}")
+    # Create a unified date column
+    date_col = None
+    if 'settlementDate' in df.columns:
+        date_col = pd.to_datetime(df['settlementDate'], errors='coerce')
+    elif 'accountingYearMonthNumber' in df.columns:
+        date_col = pd.to_datetime(df['accountingYearMonthNumber'], format='%Y%m%d', errors='coerce')
     else:
-        # Try to extract from other date columns
-        date_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
+        # Try to find any column that includes 'date'
+        date_cols = [col for col in df.columns if 'date' in col.lower()]
         if date_cols:
-            try:
-                date_col = df[date_cols[0]]
-                if isinstance(date_col, pd.Series):
-                    df['date'] = pd.to_datetime(date_col, errors='coerce')
-                elif isinstance(date_col, pd.DataFrame) and len(date_col.columns) > 0:
-                    df['date'] = pd.to_datetime(date_col.iloc[:, 0], errors='coerce')
-            except (KeyError, AttributeError):
-                pass
+            date_col = pd.to_datetime(df[date_cols[0]], errors='coerce')
     
-    # Convert short_volume to numeric
-    df['short_volume'] = pd.to_numeric(df['short_volume'], errors='coerce')
-    df['total_volume'] = pd.to_numeric(df['total_volume'], errors='coerce') if 'total_volume' in df.columns else None
+    if date_col is None:
+        print("⚠️  Could not locate a date column in FINRA data")
+        return pd.DataFrame()
     
-    # Calculate short interest ratio (if total volume available)
-    if 'total_volume' in df.columns and df['total_volume'].notna().any():
-        df['short_ratio'] = df['short_volume'] / df['total_volume']
+    df['date'] = date_col
+    
+    # Convert short interest to numeric
+    if 'short_interest' not in df.columns and 'currentShortPositionQuantity' in df.columns:
+        df['short_interest'] = df['currentShortPositionQuantity']
+    df['short_interest'] = pd.to_numeric(df['short_interest'], errors='coerce')
     
     # Clean ticker symbols (remove whitespace, convert to uppercase)
     df['ticker'] = df['ticker'].str.strip().str.upper()
     
-    # Drop rows with missing ticker or short_volume
-    df = df[df['ticker'].notna() & df['short_volume'].notna()]
+    # Drop rows with missing ticker, date, or short interest
+    df = df[df['ticker'].notna() & df['date'].notna() & df['short_interest'].notna()]
+    
+    # Keep only the columns we need downstream
+    df = df[['ticker', 'date', 'short_interest']].copy()
     
     return df
 
@@ -266,7 +260,7 @@ def load_ticker_gvkey_mapping() -> pd.DataFrame:
     """
     mapping = pd.DataFrame()
     
-    # Try to load from AP_CompustatAnnual
+    # Load from AP_CompustatAnnual
     compustat_path = Path("../pyData/Intermediate/AP_CompustatAnnual.parquet")
     if compustat_path.exists():
         try:
@@ -277,19 +271,8 @@ def load_ticker_gvkey_mapping() -> pd.DataFrame:
             print(f"✓ Loaded {len(mapping)} ticker-gvkey mappings from AP_CompustatAnnual")
         except Exception as e:
             print(f"⚠️  Could not load from AP_CompustatAnnual: {e}")
-    
-    # Try to load from CCM linking table
-    if mapping.empty:
-        ccm_path = Path("../pyData/Intermediate/CCMLinkingTable.parquet")
-        if ccm_path.exists():
-            try:
-                ccm = pd.read_parquet(ccm_path, columns=['ticker', 'gvkey'])
-                ccm = ccm.dropna(subset=['ticker', 'gvkey'])
-                ccm = ccm.drop_duplicates(subset=['ticker'])
-                mapping = ccm[['ticker', 'gvkey']].copy()
-                print(f"✓ Loaded {len(mapping)} ticker-gvkey mappings from CCMLinkingTable")
-            except Exception as e:
-                print(f"⚠️  Could not load from CCMLinkingTable: {e}")
+    else:
+        print("⚠️  AP_CompustatAnnual.parquet not found. Short interest will not have gvkey.")
     
     return mapping
 
@@ -298,22 +281,22 @@ def load_ticker_gvkey_mapping() -> pd.DataFrame:
 # MAIN PROCESSING FUNCTIONS
 # =============================================================================
 
-def aggregate_to_monthly(daily_df: pd.DataFrame) -> pd.DataFrame:
+def aggregate_to_monthly(positions_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Aggregate daily short interest data to monthly.
+    Aggregate FINRA bi-monthly short interest data to monthly (first non-missing).
     
-    Uses first non-missing value per ticker-month (matching original Compustat logic).
+    Uses first non-missing value per ticker-month (matching Compustat logic).
     
     Args:
-        daily_df: Daily short interest DataFrame with columns: ticker, date, short_volume
+        positions_df: Short interest DataFrame with columns: ticker, date, short_interest
         
     Returns:
-        Monthly aggregated DataFrame with columns: ticker, time_avail_m, shortint
+        Monthly aggregated DataFrame with columns: ticker, time_avail_m, shortint, shortintadj
     """
-    if daily_df.empty:
+    if positions_df.empty:
         return pd.DataFrame()
     
-    df = daily_df.copy()
+    df = positions_df.copy()
 
     # If there are multiple 'date' columns (duplicate labels), collapse to a single one
     if 'date' in df.columns:
@@ -328,7 +311,7 @@ def aggregate_to_monthly(daily_df: pd.DataFrame) -> pd.DataFrame:
             df['date'] = primary_date
     # Ensure date column exists and is a Series
     if 'date' not in df.columns:
-        print("⚠️  'date' column not found in daily_df")
+        print("⚠️  'date' column not found in positions_df")
         return pd.DataFrame()
     
     # Safely access the date column
@@ -357,11 +340,11 @@ def aggregate_to_monthly(daily_df: pd.DataFrame) -> pd.DataFrame:
         return non_missing.iloc[0] if not non_missing.empty else np.nan
     
     monthly = df.groupby(['ticker', 'time_avail_m'], as_index=False).agg(
-        shortint=('short_volume', first_non_missing),
-        shortintadj=('short_volume', first_non_missing),  # Same as shortint for now
+        shortint=('short_interest', first_non_missing),
+        shortintadj=('short_interest', first_non_missing),  # Same as shortint for now
     )
     
-    # Convert shortint from shares to millions (matching Compustat format)
+    # Convert short interest from shares to millions (Compustat format)
     monthly['shortint'] = monthly['shortint'] / 1e6
     monthly['shortintadj'] = monthly['shortintadj'] / 1e6
     
@@ -406,6 +389,10 @@ def main():
     Main execution function.
     """
     
+    if not REQUESTS_AVAILABLE:
+        print("❌ requests library not available. Install with `pip install requests`.")
+        return
+    
     print("\n" + "="*60)
     print("📋 Loading ticker universe and mapping...")
     print("="*60)
@@ -413,55 +400,42 @@ def main():
     # Load ticker-gvkey mapping
     ticker_gvkey_map = load_ticker_gvkey_mapping()
     
-    # Determine date range to download
-    # FINRA data available from ~2010 onwards
-    # Download last 2 years by default (can be adjusted)
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=730)  # ~2 years
-    
-    print(f"\n📥 Downloading FINRA short interest data...")
-    print(f"   Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-    print(f"   Note: FINRA data is only available for trading days")
-    
-    # Download data month by month
-    all_daily_data = []
-    
-    current_date = start_date.replace(day=1)  # Start of month
-    
-    while current_date <= end_date:
-        year = current_date.year
-        month = current_date.month
-        
-        print(f"\n📅 Processing {year}-{month:02d}...")
-        monthly_data = download_finra_monthly(year, month)
-        
-        if not monthly_data.empty:
-            processed = process_finra_data(monthly_data)
-            if not processed.empty:
-                all_daily_data.append(processed)
-                print(f"  ✓ Collected {len(processed)} daily records for {year}-{month:02d}")
-        
-        # Move to next month
-        if month == 12:
-            current_date = datetime(year + 1, 1, 1)
-        else:
-            current_date = datetime(year, month + 1, 1)
-    
-    if not all_daily_data:
-        print("\n❌ No FINRA data downloaded. Exiting.")
+    print("\n" + "="*60)
+    print("📥 Discovering FINRA short interest position files...")
+    print("="*60)
+    available_files = list_finra_short_interest_files()
+    if available_files.empty:
+        print("\n❌ No FINRA short interest files found. Exiting.")
         return
     
-    # Combine all daily data
+    all_data = []
+    for row in available_files.itertuples():
+        raw_df = download_finra_short_interest_file(row.url, settlement_hint=row.settlement_str)
+        if raw_df is None or raw_df.empty:
+            continue
+        processed = process_finra_data(raw_df)
+        if not processed.empty:
+            all_data.append(processed)
+            print(f"  ✓ Processed {len(processed)} rows for settlement {row.settlement_str}")
+    
+    if not all_data:
+        print("\n❌ No FINRA data processed. Exiting.")
+        return
+    
+    # Combine all records
     print("\n" + "="*60)
     print("🔄 Processing and aggregating data...")
     print("="*60)
     
-    daily_df = pd.concat(all_daily_data, ignore_index=True)
-    print(f"✓ Combined {len(daily_df):,} daily records")
+    positions_df = pd.concat(all_data, ignore_index=True)
+    print(f"✓ Combined {len(positions_df):,} raw records across {len(all_data)} files")
+    
+    # Deduplicate exact ticker-date combinations
+    positions_df = positions_df.drop_duplicates(subset=['ticker', 'date'])
     
     # Aggregate to monthly
-    monthly_df = aggregate_to_monthly(daily_df)
-    print(f"✓ Aggregated to {len(monthly_df):,} monthly records")
+    monthly_df = aggregate_to_monthly(positions_df)
+    print(f"✓ Aggregated to {len(monthly_df):,} monthly records (first non-missing per ticker-month)")
     
     # Add gvkey if mapping available
     if not ticker_gvkey_map.empty:
@@ -488,13 +462,7 @@ def main():
     print(f"✓ After deduplication: {len(monthly_df):,} monthly records")
     
     # Select final columns (matching original format)
-    final_columns = ['time_avail_m']
-    if 'gvkey' in monthly_df.columns:
-        final_columns.insert(0, 'gvkey')
-    if 'ticker' in monthly_df.columns:
-        final_columns.append('ticker')
-    final_columns.extend(['shortint', 'shortintadj'])
-    
+    final_columns = ['gvkey', 'ticker', 'time_avail_m', 'shortint', 'shortintadj']
     monthly_df = monthly_df[[col for col in final_columns if col in monthly_df.columns]]
     
     # Save data
@@ -538,12 +506,11 @@ def main():
     print("="*60)
     
     print("\n📝 Notes:")
-    print("  - FINRA data is available from ~2010 onwards")
-    print("  - Data is daily, aggregated to monthly (first non-missing value)")
-    print("  - Short interest is in millions of shares (matching Compustat format)")
-    print("  - gvkey mapping requires AP_CompustatAnnual.parquet or CCMLinkingTable.parquet")
+    print("  - FINRA equity short interest positions available from Dec 2017 onward (bi-monthly reports)")
+    print("  - Aggregation uses first non-missing per ticker-month (Compustat methodology)")
+    print("  - Short interest is scaled to millions of shares (shortint and shortintadj match)")
+    print("  - gvkey mapping requires AP_CompustatAnnual.parquet")
 
 
 if __name__ == "__main__":
     main()
-

@@ -27,6 +27,7 @@ Notes:
 """
 
 import os
+import pickle
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -83,17 +84,21 @@ EDGAR_IDENTITY = "apodrez21@gmail.com"  # Change to your email
 # =============================================================================
 
 def get_sp500_tickers():
-    """Get current S&P 500 ticker list from Wikipedia"""
+    """Get S&P 500 ticker list from pickle file"""
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
+    if not universe_path.exists():
+        raise FileNotFoundError(
+            f"S&P 500 universe file not found: {universe_path}\n"
+            f"Please ensure the file exists or create it first."
+        )
+    
     try:
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        df = tables[0]
-        tickers = df['Symbol'].str.replace('.', '-', regex=False).tolist()
-        print(f"✓ Retrieved {len(tickers)} S&P 500 tickers")
+        with open(universe_path, 'rb') as f:
+            tickers = pickle.load(f)
+        print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
         return tickers
     except Exception as e:
-        print(f"⚠️  Could not fetch S&P 500 list: {e}")
-        return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ']
+        raise RuntimeError(f"Could not load sp500_universe.pkl: {e}") from e
 
 def get_user_ticker_list():
     """User can provide their own ticker list"""

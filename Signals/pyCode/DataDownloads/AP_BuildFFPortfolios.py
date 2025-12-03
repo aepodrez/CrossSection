@@ -62,11 +62,11 @@ except Exception:
 # Config
 # ------------------------------------------------------------------------------
 
-UNIVERSE_FILE = "../pyData/Static/universe.csv"  # Fallback if pickle not available
-SP500_UNIVERSE_PKL = "../pyData/Static/sp500_universe.pkl"
-COMPANY_TICKERS_FILE = "../pyData/Static/company_tickers.json"  # local cache
-EDGAR_COMPANYFACTS_DIR = "../pyData/EDGAR/companyfacts"         # local cache dir
-OUTPUT_FILE = "../pyData/Static/ff3_portfolios.csv"
+UNIVERSE_FILE = "../../pyData/Static/universe.csv"  # Fallback if pickle not available
+SP500_UNIVERSE_PKL = "../../pyData/Static/sp500_universe.pkl"
+COMPANY_TICKERS_FILE = "../../pyData/Static/company_tickers.json"  # local cache
+EDGAR_COMPANYFACTS_DIR = "../../pyData/EDGAR/companyfacts"         # local cache dir
+OUTPUT_FILE = "../../pyData/Static/ff3_portfolios.csv"
 
 VERBOSE = True
 ROW_LIMIT = MAX_ROWS_DL if MAX_ROWS_DL and MAX_ROWS_DL > 0 else None
