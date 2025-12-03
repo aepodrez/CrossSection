@@ -131,6 +131,16 @@ def main():
     except subprocess.CalledProcessError as e:
         print(f"ERROR building AP Signal Master Table: {e}")
         sys.exit(1)
+
+    # Compute AP predictors that rely only on AP CRSP data (yfinance)
+    # Keep this after downloads + master table so dependencies are satisfied.
+    print("\n3. Running AP predictors...")
+    try:
+        result = subprocess.run([sys.executable, "-u", "Predictors/AP_BetaTailRisk.py"], check=True)
+        print("✓ AP BetaTailRisk completed")
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR running AP predictors: {e}")
+        sys.exit(1)
     
     print("\n" + "=" * 60)
     print("AP Master script completed successfully!")

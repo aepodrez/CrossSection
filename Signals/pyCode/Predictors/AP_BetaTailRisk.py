@@ -22,8 +22,12 @@ import os
 import sys
 from pathlib import Path
 
-import polars as pl
-import polars_ols as pls  # Registers .least_squares namespace
+try:
+    import polars as pl
+    import polars_ols as pls  # Registers .least_squares namespace
+except ImportError:
+    print("❌ Required packages missing. Please install: pip install polars polars-ols")
+    sys.exit(1)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.save_standardized import save_predictor
@@ -31,7 +35,8 @@ from utils.save_standardized import save_predictor
 
 PREDICTOR_NAME = "AP_BetaTailRisk"
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR.parent / "pyData" / "Intermediate"
+# Data lives under Signals/pyData/, which is a sibling of pyCode
+DATA_DIR = SCRIPT_DIR.parent.parent / "pyData" / "Intermediate"
 DAILY_PATH = DATA_DIR / "AP_dailyCRSP.parquet"
 MONTHLY_PATH = DATA_DIR / "AP_monthlyCRSP.parquet"
 TAILRISK_PATH = DATA_DIR / "AP_TailRisk.parquet"
@@ -61,9 +66,9 @@ def main():
     daily_crsp = pl.read_parquet(str(DAILY_PATH)).select(["permno", "time_d", "ret"])
     print(f"Loaded AP daily CRSP-like data: {len(daily_crsp):,} daily observations")
 
-    # Convert daily dates to monthly
+    # Convert daily dates to monthly (drop timezone to avoid join mismatch)
     daily_crsp = daily_crsp.with_columns(
-        [pl.col("time_d").dt.truncate("1mo").alias("time_avail_m")]
+        [pl.col("time_d").dt.truncate("1mo").dt.date().alias("time_avail_m")]
     )
 
     print("Calculating 5th percentile returns by month...")
@@ -86,19 +91,22 @@ def main():
     monthly_tailrisk = (
         tail_data.group_by("time_avail_m")
         .agg([pl.col("tailex").mean().alias("tailex")])
+        .with_columns(pl.col("time_avail_m").dt.date().alias("time_avail_m"))
         .sort("time_avail_m")
     )
     print(f"Generated monthly tail risk factor for {len(monthly_tailrisk):,} months")
 
     # Save intermediate tail risk factor
-    monthly_tailrisk.write_parquet(TAILRISK_PATH)
+    monthly_tailrisk.write_parquet(str(TAILRISK_PATH))
     print(f"Saved {TAILRISK_PATH.name}")
 
     # PART 2: BETA REGRESSION WITH MONTHLY DATA
     print("📊 Part 2: Computing tail risk betas from AP monthly returns...")
     print(f"Loading {MONTHLY_PATH.name}...")
-    monthly_crsp = pl.read_parquet(str(MONTHLY_PATH)).select(
-        ["permno", "time_avail_m", "ret", "shrcd"]
+    monthly_crsp = (
+        pl.read_parquet(str(MONTHLY_PATH))
+        .select(["permno", "time_avail_m", "ret", "shrcd"])
+        .with_columns(pl.col("time_avail_m").dt.date().alias("time_avail_m"))
     )
     print(f"Loaded AP monthly CRSP-like data: {len(monthly_crsp):,} monthly observations")
 
@@ -118,10 +126,24 @@ def main():
         ]
     )
 
+    total_months = df["time_avail_m"].n_unique()
+    window_size = 120
+    min_periods = 72
+    if total_months < window_size:
+        # Fall back when AP history is short (yfinance defaults to ~2 years in AP downloads)
+        window_size = total_months
+        min_periods = max(12, int(window_size * 0.6))
+        print(
+            f"⚠️  Only {total_months} months available; "
+            f"using window_size={window_size}, min_periods={min_periods} instead of 120/72."
+        )
+
     print(
-        f"Computing rolling 120-month tail risk betas for {df['permno'].n_unique():,} unique permnos..."
+        f"Computing rolling {window_size}-month tail risk betas for {df['permno'].n_unique():,} unique permnos..."
     )
-    print("Rolling 120-month regression windows with minimum 72 observations per permno")
+    print(
+        f"Rolling {window_size}-month regression windows with minimum {min_periods} observations per permno"
+    )
 
     df = df.sort(["permno", "time_avail_m_int"])
 
@@ -129,8 +151,8 @@ def main():
         pl.col("ret")
         .least_squares.rolling_ols(
             pl.col("tailex"),
-            window_size=120,
-            min_periods=72,
+            window_size=window_size,
+            min_periods=min_periods,
             mode="coefficients",
             add_intercept=True,
             null_policy="drop",
@@ -177,4 +199,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
