@@ -130,12 +130,10 @@ def main():
     window_size = 120
     min_periods = 72
     if total_months < window_size:
-        # Fall back when AP history is short (yfinance defaults to ~2 years in AP downloads)
-        window_size = total_months
-        min_periods = max(12, int(window_size * 0.6))
-        print(
-            f"⚠️  Only {total_months} months available; "
-            f"using window_size={window_size}, min_periods={min_periods} instead of 120/72."
+        raise ValueError(
+            f"Only {total_months} months available; need at least {window_size} "
+            f"months of AP monthly data to compute {PREDICTOR_NAME}. "
+            "Extend the AP CRSP daily/monthly history and rerun."
         )
 
     print(
@@ -202,5 +200,8 @@ if __name__ == "__main__":
     try:
         main()
     except FileNotFoundError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+    except ValueError as e:
         print(f"❌ {e}")
         sys.exit(1)

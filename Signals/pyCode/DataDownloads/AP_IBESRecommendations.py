@@ -81,27 +81,72 @@ def convert_to_ric(symbol: str, exchange: str = "NASDAQ") -> str:
     suffix = exchange_map.get(exchange, ".OQ")
     return f"{symbol}{suffix}"
 
-def get_sp500_tickers_with_exchange():
-    """Get S&P 500 tickers in RIC format"""
+def load_sp500_universe():
+    """Load S&P 500 ticker universe from pickle file."""
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
+    
+    if universe_path.exists():
+        try:
+            with open(universe_path, 'rb') as f:
+                tickers = pickle.load(f)
+            print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
+            return tickers
+        except Exception as e:
+            print(f"⚠️  Could not load sp500_universe.pkl: {e}")
+    
+    # Fallback: Try to load from AP_CRSPMonthly
+    ap_crsp_path = Path("../pyData/Intermediate/AP_monthlyCRSP.parquet")
+    if ap_crsp_path.exists():
+        try:
+            print("Loading tickers from AP_monthlyCRSP.parquet...")
+            crsp_df = pd.read_parquet(ap_crsp_path, columns=['ticker'])
+            tickers = crsp_df['ticker'].dropna().unique().tolist()
+            print(f"✓ Found {len(tickers)} unique tickers from AP_CRSPMonthly")
+            return tickers
+        except Exception as e:
+            print(f"⚠️  Could not load from AP_CRSPMonthly: {e}")
+    
+    # Final fallback: Wikipedia
     try:
         url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
         tables = pd.read_html(url)
         df = tables[0]
-        
-        ric_symbols = []
-        for _, row in df.iterrows():
-            symbol = row['Symbol'].replace('.', '-')
-            if 'NYSE' in str(row.get('Exchange', '')):
-                ric = convert_to_ric(symbol, "NYSE")
-            else:
-                ric = convert_to_ric(symbol, "NASDAQ")
-            ric_symbols.append(ric)
-        
-        print(f"✓ Retrieved {len(ric_symbols)} S&P 500 tickers (RIC format)")
-        return ric_symbols
+        tickers = df['Symbol'].replace('.', '-').tolist()
+        print(f"✓ Retrieved {len(tickers)} S&P 500 tickers from Wikipedia")
+        return tickers
     except Exception as e:
         print(f"⚠️  Could not fetch S&P 500 list: {e}")
-        return ["AAPL.OQ", "MSFT.OQ", "GOOGL.OQ", "AMZN.OQ", "META.OQ"]
+        return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META']
+
+
+def get_sp500_tickers_with_exchange():
+    """Get S&P 500 tickers in RIC format from pickle file."""
+    print("\n" + "="*60)
+    print("📋 Loading ticker universe...")
+    print("="*60)
+    
+    # Load tickers from SP500 universe
+    tickers = load_sp500_universe()
+    
+    # Convert to RIC format
+    ric_symbols = []
+    # Common NYSE tickers
+    nyse_tickers = {
+        'JPM', 'V', 'JNJ', 'WMT', 'PG', 'UNH', 'HD', 'DIS', 'BAC', 'MA',
+        'XOM', 'CVX', 'KO', 'PEP', 'T', 'VZ', 'MRK', 'ABT', 'TMO', 'DHR'
+    }
+    
+    for ticker in tickers:
+        symbol = str(ticker).replace('.', '-').upper()
+        if symbol in nyse_tickers:
+            ric = convert_to_ric(symbol, "NYSE")
+        else:
+            ric = convert_to_ric(symbol, "NASDAQ")
+        ric_symbols.append(ric)
+    
+    print(f"✓ Converted {len(tickers)} tickers to {len(ric_symbols)} RICs")
+    return ric_symbols
 
 def connect_eikon():
     """Connect to Eikon API"""

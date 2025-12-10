@@ -1,403 +1,366 @@
-# ABOUTME: Downloads IBES EPS estimates (unadjusted for splits) from Eikon/LSEG API for multiple forecast periods
-# ABOUTME: Processes and standardizes IBES data, keeping last observation per ticker/period combination
+# ABOUTME: Downloads IBES EPS estimates (unadjusted for splits) from Refinitiv Platform
+# ABOUTME: Covers multiple forecast periods (current quarter, next year, year after, long-term) to mirror WRDS pull
 """
 Inputs:
-- Eikon/LSEG API (via eikon package)
-- EIKON_APP_KEY from .env file
-- Universe of symbols (S&P 500 by default)
+- Refinitiv Platform credentials (via .env REFINITIV_APP_KEY)
 
 Outputs:
 - ../pyData/Intermediate/AP_IBES_EPS_Unadj.parquet
 
-Requirements:
-    pip install eikon pandas python-dotenv
-
-How to run: python AP_IBESEPSUnadjusted.py
-
-Notes:
-- Requires active Eikon/Refinitiv subscription
-- Fetches multiple forecast periods:
-  * FPI=0: Long-term growth
-  * FPI=1: Next fiscal year (FY1)
-  * FPI=2: Two years ahead (FY2)
-  * FPI=6: Current quarter
-- Unadjusted for stock splits (raw estimates)
+How to run: python3 AP_IBESEPSUnadjusted.py
 """
 
 import os
-import sys
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 from pathlib import Path
+from datetime import datetime
+import pandas as pd
+import refinitiv.data as rd
+from refinitiv.data import _configure as rd_config
 from dotenv import load_dotenv
 import warnings
+
 warnings.filterwarnings('ignore')
-import time
 
-try:
-    import eikon as ek
-    EIKON_AVAILABLE = True
-except ImportError:
-    print("⚠️  eikon not installed. Install with: pip install eikon")
-    EIKON_AVAILABLE = False
-
-print("=" * 70, flush=True)
-print("📊 AP_IBESEPSUnadjusted.py - IBES EPS Unadjusted from Eikon", flush=True)
-print("=" * 70, flush=True)
-
+# Load environment variables
 load_dotenv()
 
+# Configuration
 OUTPUT_DIR = Path("../pyData/Intermediate")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "AP_IBES_EPS_Unadj.parquet"
+DEBUG_MODE = False  # Set to True to limit the number of instruments
+MAX_INSTRUMENTS = 100  # Only used if DEBUG_MODE is True
+BATCH_SIZE = int(os.getenv("IBES_BATCH_SIZE", "20"))  # Smaller batches to avoid timeouts
+HTTP_REQUEST_TIMEOUT = int(os.getenv("RD_HTTP_TIMEOUT", "60"))  # seconds
 
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
 
-# Date range - Last 2 years
-END_DATE = datetime.now().strftime("%Y-%m-%d")
-START_DATE = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")  # 2 years ago
-
-DEBUG_MODE = False
-
-if DEBUG_MODE:
-    START_DATE = "2023-01-01"
-    print(f"🔧 DEBUG MODE: {START_DATE} to {END_DATE}")
-else:
-    print(f"🚀 PRODUCTION MODE: {START_DATE} to {END_DATE}")
-
-# =============================================================================
-# HELPER FUNCTIONS (Reuse)
-# =============================================================================
-
-def convert_to_ric(symbol: str, exchange: str = "NASDAQ") -> str:
-    if "." in symbol:
-        return symbol
-    exchange_map = {"NYSE": ".N", "NASDAQ": ".OQ", "AMEX": ".A"}
-    suffix = exchange_map.get(exchange, ".OQ")
-    return f"{symbol}{suffix}"
-
-def get_sp500_tickers_with_exchange():
-    try:
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        df = tables[0]
-        ric_symbols = []
-        for _, row in df.iterrows():
-            symbol = row['Symbol'].replace('.', '-')
-            if 'NYSE' in str(row.get('Exchange', '')):
-                ric = convert_to_ric(symbol, "NYSE")
-            else:
-                ric = convert_to_ric(symbol, "NASDAQ")
-            ric_symbols.append(ric)
-        print(f"✓ Retrieved {len(ric_symbols)} S&P 500 tickers (RIC format)")
-        return ric_symbols
-    except Exception as e:
-        print(f"⚠️  Could not fetch S&P 500 list: {e}")
-        return ["AAPL.OQ", "MSFT.OQ", "GOOGL.OQ", "AMZN.OQ", "META.OQ"]
-
-def connect_eikon():
-    if not EIKON_AVAILABLE:
-        return False
-    eikon_app_key = os.getenv("EIKON_APP_KEY")
-    if not eikon_app_key:
-        print("\n❌ EIKON_APP_KEY not found in .env file")
-        return False
-    try:
-        ek.set_app_key(eikon_app_key)
-        test_df, test_err = ek.get_data(["AAPL.OQ"], ["TR.CompanyName"])
-        if test_err:
-            print(f"❌ Eikon connection test failed: {test_err}")
-            return False
-        print("✓ Eikon connection successful")
-        return True
-    except Exception as e:
-        print(f"❌ Eikon connection error: {e}")
-        return False
-
-# =============================================================================
-# BULK DOWNLOAD FUNCTION (MULTIPLE PERIODS)
-# =============================================================================
-
-def bulk_download_ibes_eps_unadjusted(symbols, start_date, end_date):
+def initialize_refinitiv_session():
     """
-    Download IBES EPS estimates for multiple forecast periods.
-    
-    Per IBESGuide.md: FPI codes represent:
-    - 0: Long-term growth (5-year)
-    - 1: Next fiscal year (FY1)
-    - 2: Two years ahead (FY2)
-    - 6: Current quarter
+    Initialize Refinitiv Data session using the Platform (RDP) with REFINITIV_APP_KEY.
     """
+    app_key = os.getenv("REFINITIV_APP_KEY")
+    username = os.getenv("REFINITIV_USERNAME")
+    password = os.getenv("REFINITIV_PASSWORD")
+
+    if not app_key or not username or not password:
+        raise Exception("REFINITIV_APP_KEY, REFINITIV_USERNAME, and REFINITIV_PASSWORD must be set in your .env file.")
+
+    session_name = "rdp"
+    session_path = f"sessions.platform.{session_name}"
+
+    rd_config.set_param(f"{session_path}.app-key", app_key, auto_create=True)
+    rd_config.set_param(f"{session_path}.username", username, auto_create=True)
+    rd_config.set_param(f"{session_path}.password", password, auto_create=True)
+    rd_config.set_param("sessions.default", f"platform.{session_name}", auto_create=True)
+    rd_config.set_param("http.request-timeout", HTTP_REQUEST_TIMEOUT, auto_create=True)
+
+    try:
+        rd.open_session(f"platform.{session_name}")
+        test_df = rd.get_data(universe=["AAPL.O"], fields=["TR.CompanyName"])
+        if test_df is None:
+            raise Exception("Platform session opened but test request returned no data.")
+        print("Connected to Refinitiv Platform session")
+    except Exception as e:
+        try:
+            rd.close_session()
+        except Exception:
+            pass
+        raise Exception(f"Could not connect to Refinitiv Platform with APP_KEY. {e}")
+
+
+def load_sp500_universe():
+    """
+    Load S&P 500 ticker universe from pickle file.
+    Returns list of ticker strings.
+    """
+    import pickle
+    universe_path = Path("../pyData/Static/sp500_universe.pkl")
     
-    # We need to fetch different periods separately since Eikon uses "Period" parameter
-    periods_to_fetch = [
-        ("FY1", "1"),   # Next year
-        ("FY2", "2"),   # Two years ahead
-        # Note: LTG and quarterly need different fields/approach
-    ]
+    if universe_path.exists():
+        try:
+            with open(universe_path, 'rb') as f:
+                tickers = pickle.load(f)
+            print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
+            return tickers
+        except Exception as e:
+            print(f"⚠️  Could not load sp500_universe.pkl: {e}")
     
-    all_data = []
+    # Fallback: Try to load from AP_CRSPMonthly
+    ap_crsp_path = Path("../pyData/Intermediate/AP_monthlyCRSP.parquet")
+    if ap_crsp_path.exists():
+        try:
+            print("Loading tickers from AP_monthlyCRSP.parquet...")
+            crsp_df = pd.read_parquet(ap_crsp_path, columns=['ticker'])
+            tickers = crsp_df['ticker'].dropna().unique().tolist()
+            print(f"✓ Found {len(tickers)} unique tickers from AP_CRSPMonthly")
+            return tickers
+        except Exception as e:
+            print(f"⚠️  Could not load from AP_CRSPMonthly: {e}")
     
-    for period_code, fpi_value in periods_to_fetch:
-        print(f"\n  Fetching Period={period_code} (FPI={fpi_value})...")
-        
-        fields = [
-            "TR.EPSMeanEstimate.date",
-            "TR.EPSMeanEstimate.fperiod",
-            "TR.EPSMeanEstimate",
-            "TR.EPSNumberOfEstimates",
-            "TR.EPSStdDev",
-            "TR.EPSMedianEstimate",
-        ]
-        
-        params = {
-            "Scale": 6,
-            "SDate": start_date,
-            "EDate": end_date,
-            "FRQ": "M",
-            "Curn": "USD",
-            "Period": period_code,
-            "RH": "date",
-        }
-        
-        batch_size = 50
-        successful = 0
-        failed = 0
-        
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i:i+batch_size]
-            
-            if i % 250 == 0:
-                print(f"    Processing batch {i//batch_size + 1}/{(len(symbols)-1)//batch_size + 1}")
-            
-            for symbol in batch:
-                try:
-                    df, err = ek.get_data([symbol], fields, params)
-                    
-                    if err or df is None or df.empty:
-                        failed += 1
-                        continue
-                    
-                    df["Instrument"] = symbol
-                    df["fpi"] = fpi_value  # Add FPI indicator
-                    
-                    # Rename columns
-                    df = df.rename(columns={
-                        "TR.EPSMeanEstimate.date": "statpers",
-                        "TR.EPSMeanEstimate.fperiod": "fpedats",
-                        "TR.EPSMeanEstimate": "meanest",
-                        "TR.EPSNumberOfEstimates": "numest",
-                        "TR.EPSStdDev": "stdev",
-                        "TR.EPSMedianEstimate": "medest",
-                    })
-                    
-                    # Parse dates
-                    df["statpers"] = pd.to_datetime(df["statpers"], errors="coerce")
-                    df["fpedats"] = pd.to_datetime(df["fpedats"], errors="coerce")
-                    
-                    all_data.append(df)
-                    successful += 1
-                    time.sleep(0.2)
-                    
-                except Exception as e:
-                    failed += 1
-                    continue
-            
-            time.sleep(2)
-        
-        print(f"    ✓ Period {period_code}: {successful}/{len(symbols)} symbols (failed: {failed})")
+    # Final fallback: sample list
+    print("⚠️  No universe file found. Using sample tickers.")
+    return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ']
+
+
+def convert_tickers_to_rics(tickers):
+    """
+    Convert ticker symbols to Refinitiv RIC format.
+    Uses heuristic mapping based on common exchange patterns.
+    """
+    print(f"\nConverting {len(tickers)} tickers to RIC format...")
     
-    # Fetch Long-Term Growth (FPI=0)
-    print(f"\n  Fetching Long-Term Growth (FPI=0)...")
-    ltg_fields = [
-        "TR.LTGMean.date",
-        "TR.LTGMean",
-        "TR.LTGMedian",
-        "TR.LTGNumberOfEstimates",
-    ]
-    
-    ltg_params = {
-        "Scale": 6,
-        "SDate": start_date,
-        "EDate": "0",  # Use "0" for current (LSEG docs)
-        "Frq": "M",    # Note: "Frq" not "FRQ" for LTG
-        "Curn": "USD",
-        "RH": "date",
+    # Common NYSE tickers (financials, consumer staples, etc.)
+    nyse_tickers = {
+        'JPM', 'V', 'JNJ', 'WMT', 'PG', 'UNH', 'HD', 'DIS', 'BAC', 'MA',
+        'XOM', 'CVX', 'KO', 'PEP', 'T', 'VZ', 'MRK', 'ABT', 'TMO', 'DHR'
     }
     
-    successful_ltg = 0
-    failed_ltg = 0
+    rics = []
+    for ticker in tickers:
+        if ticker.upper() in nyse_tickers:
+            rics.append(f"{ticker.upper()}.N")
+        else:
+            rics.append(f"{ticker.upper()}.O")
     
-    for i in range(0, len(symbols), batch_size):
-        batch = symbols[i:i+batch_size]
-        
-        if i % 250 == 0:
-            print(f"    Processing batch {i//batch_size + 1}/{(len(symbols)-1)//batch_size + 1}")
-        
-        for symbol in batch:
+    print(f"✓ Converted to {len(rics)} RICs")
+    return rics
+
+
+def get_active_universe():
+    """
+    Get a universe of US stocks to download IBES data for.
+    Loads from SP500 universe pickle file and converts to RIC format.
+    """
+    print("\n" + "="*60)
+    print("📋 Loading ticker universe...")
+    print("="*60)
+    
+    # Load tickers from SP500 universe
+    tickers = load_sp500_universe()
+    
+    # Limit for debug mode
+    if DEBUG_MODE:
+        tickers = tickers[:MAX_INSTRUMENTS]
+        print(f"DEBUG MODE: Limited to {len(tickers)} tickers")
+    
+    # Convert tickers to RIC format
+    rics = convert_tickers_to_rics(tickers)
+    
+    print(f"\n📊 Processing {len(rics)} instruments")
+    return rics
+
+
+def get_ibes_unadjusted_data(rics, start_date="2000-01-01", end_date=None):
+    """
+    Download IBES unadjusted estimates data from Refinitiv.
+
+    Forecast periods:
+    - FPI 0: Long-term growth (Period=LTG)
+    - FPI 1: Next fiscal year (Period=FY1)
+    - FPI 2: Year after next (Period=FY2)
+    - FPI 6: Current fiscal quarter (Period=FQ0)
+    """
+    if end_date is None:
+        end_date = datetime.now().strftime("%Y-%m-%d")
+
+    print(f"\nDownloading IBES Unadjusted data for {len(rics)} instruments...")
+    print(f"Date range: {start_date} to {end_date}")
+    print("Forecast periods: Current Quarter (FQ0), Next Year (FY1), Year After (FY2), Long-Term")
+
+    forecast_periods = [
+        ("FQ0", "6"),  # Current quarter
+        ("FY1", "1"),  # Next fiscal year
+        ("FY2", "2"),  # Year after next
+        ("LTG", "0"),  # Long-term growth
+    ]
+
+    all_data = []
+
+    for period_code, fpi_code in forecast_periods:
+        print(f"\n--- Processing Forecast Period: {period_code} (FPI={fpi_code}) ---")
+
+        if period_code == "LTG":
+            fields = [
+                "TR.EPSLTGMeanEst",
+                "TR.EPSLTGMeanEst.date",
+                "TR.EPSLTGMedianEst",
+                "TR.EPSLTGEstStdDev",
+                "TR.EPSLTGNumOfEst",
+                "TR.EPSLTGMeanEst.fperiodenddate",
+            ]
+        else:
+            fields = [
+                "TR.EPSMeanEst",
+                "TR.EPSMeanEst.date",
+                "TR.EPSMedianEst",
+                "TR.EPSEstStdDev",
+                "TR.EPSNumOfEst",
+                "TR.EPSMeanEst.fperiodenddate",
+            ]
+
+        parameters = {
+            "SDate": start_date,
+            "EDate": end_date,
+            "Frq": "M",
+        }
+
+        if period_code != "LTG":
+            parameters["Period"] = period_code
+
+        period_data = []
+
+        for i in range(0, len(rics), BATCH_SIZE):
+            batch_rics = rics[i : i + BATCH_SIZE]
+            print(
+                f"  Batch {i//BATCH_SIZE + 1}/{(len(rics)-1)//BATCH_SIZE + 1} ({len(batch_rics)} instruments)...",
+                end=" ",
+            )
+
             try:
-                df, err = ek.get_data([symbol], ltg_fields, ltg_params)
-                
-                if err or df is None or df.empty:
-                    failed_ltg += 1
-                    continue
-                
-                df["Instrument"] = symbol
-                df["fpi"] = "0"  # LTG = FPI 0
-                
-                # Rename LTG columns to match standard format
-                rename_map = {}
-                for col in df.columns:
-                    if "LTGMean.date" in col or ("LTG" in col and "Mean" in col and "date" in col):
-                        rename_map[col] = "statpers"
-                    elif "LTGMean" in col and "date" not in col:
-                        rename_map[col] = "meanest"
-                    elif "LTGMedian" in col:
-                        rename_map[col] = "medest"
-                    elif "LTGNumber" in col:
-                        rename_map[col] = "numest"
-                
-                df = df.rename(columns=rename_map)
-                
-                # Parse dates
-                if "statpers" in df.columns:
-                    df["statpers"] = pd.to_datetime(df["statpers"], errors="coerce")
-                
-                # LTG doesn't have fpedats (forecast period end)
-                df["fpedats"] = pd.NaT
-                df["stdev"] = np.nan  # LTG typically doesn't have stdev
-                
-                all_data.append(df)
-                successful_ltg += 1
-                time.sleep(0.2)
-                
+                df_batch = rd.get_data(universe=batch_rics, fields=fields, parameters=parameters)
+
+                if df_batch is not None and len(df_batch) > 0:
+                    df_batch["fpi"] = fpi_code
+                    period_data.append(df_batch)
+                    print(f"Retrieved {len(df_batch)} records")
+                else:
+                    print("No data")
+
             except Exception as e:
-                failed_ltg += 1
+                print(f"Error: {e}")
                 continue
-        
-        time.sleep(2)
-    
-    print(f"    ✓ LTG: {successful_ltg}/{len(symbols)} symbols (failed: {failed_ltg})")
-    
-    if not all_data:
+
+        if len(period_data) > 0:
+            df_period = pd.concat(period_data, ignore_index=True)
+            all_data.append(df_period)
+            print(f"  Total for {period_code}: {len(df_period)} records")
+
+    if len(all_data) == 0:
+        print("\nWarning: No data retrieved!")
         return pd.DataFrame()
-    
-    # Combine all periods
-    result = pd.concat(all_data, ignore_index=True)
-    result["tickerIBES"] = result["Instrument"].str.split(".").str[0]
-    
-    return result
 
-# =============================================================================
-# DATA PROCESSING
-# =============================================================================
-
-def process_unadjusted_data(df):
-    """Process unadjusted IBES data to match original format"""
-    
-    if df.empty:
-        return df
-    
-    print(f"\n🔄 Processing unadjusted IBES data...")
-    
-    # Create monthly time variable
-    df['time_avail_m'] = df['statpers'].dt.to_period('M').dt.to_timestamp()
-    df['time_avail_m'] = pd.to_datetime(df['time_avail_m'])
-    
-    # Remove missing mean estimates
-    initial_count = len(df)
-    df = df.dropna(subset=['meanest'])
-    print(f"  Removed {initial_count - len(df)} records with missing meanest")
-    
-    # Keep last observation per ticker-fpi-month
-    df = df.sort_values(['tickerIBES', 'fpi', 'time_avail_m', 'statpers'])
-    df = df.drop_duplicates(['tickerIBES', 'fpi', 'time_avail_m'], keep='last')
-    
-    print(f"  After keeping last obs per month: {len(df)} records")
-    
-    # Select final columns (match original format)
-    final_cols = ['tickerIBES', 'statpers', 'fpi', 'numest', 'medest', 'meanest', 'stdev', 'fpedats', 'time_avail_m']
-    df = df[[col for col in final_cols if col in df.columns]]
-    
+    df = pd.concat(all_data, ignore_index=True)
+    print(f"\nTotal records downloaded across all periods: {len(df)}")
     return df
 
-# =============================================================================
-# MAIN EXECUTION
-# =============================================================================
+
+def process_ibes_unadjusted_data(df):
+    """Process and clean the IBES unadjusted data to match the WRDS script format."""
+    print("\nProcessing IBES Unadjusted data...")
+    print(f"Columns received: {list(df.columns)}")
+
+    column_mapping = {
+        "Instrument": "tickerIBES",
+        "Earnings Per Share - Mean Estimate": "meanest",
+        "EPS Mean Estimate": "meanest",
+        "EPS Median": "medest",
+        "EPS Median Estimate": "medest",
+        "EPS Standard Deviation": "stdev",
+        "EPS Estimate Standard Deviation": "stdev",
+        "EPS Number of Estimates": "numest",
+        "Date": "statpers",
+        "Period End Date": "fpedats",
+        # Long-term growth specific fields
+        "EPS Long-Term Growth Mean Estimate": "meanest",
+        "EPS Long-Term Growth Median Estimate": "medest",
+        "EPS Long-Term Growth Estimate Standard Deviation": "stdev",
+        "EPS Long-Term Growth Number of Estimates": "numest",
+    }
+
+    df = df.rename(columns=column_mapping)
+
+    for col in ["statpers", "fpedats"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+
+    if "statpers" in df.columns:
+        df["time_avail_m"] = df["statpers"].dt.to_period("M").dt.to_timestamp()
+        df["time_avail_m"] = pd.to_datetime(df["time_avail_m"])
+
+    if "meanest" in df.columns:
+        initial_count = len(df)
+        df = df.dropna(subset=["meanest"])
+        print(f"Removed {initial_count - len(df)} records with missing meanest")
+    else:
+        print("Warning: 'meanest' column not found")
+
+    if len(df) > 0 and {"tickerIBES", "fpi", "time_avail_m"}.issubset(df.columns):
+        df = df.sort_values(["tickerIBES", "fpi", "time_avail_m", "statpers"])
+        df = df.drop_duplicates(["tickerIBES", "fpi", "time_avail_m"], keep="last")
+        print(f"After keeping last obs per month: {len(df)} records")
+
+    output_cols = [
+        "tickerIBES",
+        "statpers",
+        "fpi",
+        "numest",
+        "medest",
+        "meanest",
+        "stdev",
+        "fpedats",
+        "time_avail_m",
+    ]
+    available_cols = [col for col in output_cols if col in df.columns]
+    return df[available_cols]
+
 
 def main():
-    """Main execution function"""
-    
-    if not EIKON_AVAILABLE:
-        print("\n❌ Cannot proceed without eikon package. Please install:")
-        print("   pip install eikon")
-        sys.exit(1)
-    
-    if not connect_eikon():
-        print("\n❌ Eikon connection failed")
-        sys.exit(1)
-    
-    print(f"\n📋 Loading ticker universe...")
-    if DEBUG_MODE:
-        symbols = ["AAPL.OQ", "MSFT.OQ", "GOOGL.OQ", "AMZN.OQ", "META.OQ"]
-        print(f"  DEBUG MODE: Using {len(symbols)} sample tickers")
-    else:
-        symbols = get_sp500_tickers_with_exchange()
-    
-    print(f"\n📥 Downloading IBES EPS unadjusted estimates from Eikon...")
-    print(f"  Fetching FPI=0 (LTG), FPI=1 (FY1), FPI=2 (FY2)...")
-    ibes_df = bulk_download_ibes_eps_unadjusted(symbols, START_DATE, END_DATE)
-    
-    if ibes_df.empty:
-        print("\n❌ No IBES data retrieved")
-        sys.exit(1)
-    
-    final_df = process_unadjusted_data(ibes_df)
-    
-    if final_df.empty:
-        print("\n❌ Data processing resulted in empty DataFrame")
-        return
-    
-    print(f"\n💾 Saving output...")
-    
-    output_file = OUTPUT_DIR / "AP_IBES_EPS_Unadj.parquet"
-    final_df.to_parquet(output_file, index=False)
-    
-    print(f"  ✓ Saved: {output_file}")
-    print(f"    Records: {len(final_df):,}")
-    print(f"    Size: {output_file.stat().st_size / 1024:.1f} KB")
-    
-    print(f"\n📊 Summary Statistics:")
-    print(f"  Total observations: {len(final_df):,}")
-    print(f"  Unique tickers: {final_df['tickerIBES'].nunique()}")
-    print(f"  Date range: {final_df['time_avail_m'].min()} to {final_df['time_avail_m'].max()}")
-    
-    # Records by FPI
-    print(f"\n  Records by FPI (Forecast Period Indicator):")
-    fpi_counts = final_df['fpi'].value_counts().sort_index()
-    fpi_labels = {"0": "Long-term growth", "1": "Next year (FY1)", "2": "Two years (FY2)"}
-    for fpi, count in fpi_counts.items():
-        label = fpi_labels.get(fpi, f"Unknown ({fpi})")
-        pct = count / len(final_df) * 100
-        print(f"    FPI={fpi} ({label}): {count:,} ({pct:.1f}%)")
-    
-    # Sample data
-    print(f"\n  Sample data:")
-    sample_cols = ['tickerIBES', 'fpi', 'time_avail_m', 'meanest', 'numest']
-    available_cols = [col for col in sample_cols if col in final_df.columns]
-    print(final_df[available_cols].head(15).to_string(index=False))
-    
-    print("\n" + "=" * 70)
-    print("✅ AP_IBESEPSUnadjusted.py completed successfully!")
     print("=" * 70)
-    print("\nOutputs:")
-    print("  1. AP_IBES_EPS_Unadj.parquet - IBES EPS unadjusted estimates")
-    print("\nNext steps:")
-    print("  - Use AP_IBES_EPS_Unadj.parquet in place of IBES_EPS_Unadj.parquet")
-    print("  - Includes FPI=0 (LTG), FPI=1 (FY1), FPI=2 (FY2)")
+    print("IBES EPS Unadjusted Data Download from Refinitiv Platform")
+    print("=" * 70)
+
+    initialize_refinitiv_session()
+    rics = get_active_universe()
+
+    if DEBUG_MODE:
+        print(f"\nDEBUG MODE: Limiting to {len(rics)} instruments")
+
+    df_ibes = get_ibes_unadjusted_data(rics)
+
+    if len(df_ibes) == 0:
+        print("\nNo data downloaded. Exiting.")
+        rd.close_session()
+        return
+
+    df_processed = process_ibes_unadjusted_data(df_ibes)
+
+    if len(df_processed) > 0:
+        df_processed.to_parquet(OUTPUT_FILE, index=False)
+        print("\n" + "=" * 70)
+        print(f"IBES EPS Unadjusted data saved to: {OUTPUT_FILE}")
+        print(f"Total records: {len(df_processed)}")
+
+        if "time_avail_m" in df_processed.columns:
+            print(f"Date range: {df_processed['time_avail_m'].min()} to {df_processed['time_avail_m'].max()}")
+
+        print("\nRecords by FPI (Forecast Period Indicator):")
+        if "fpi" in df_processed.columns:
+            fpi_counts = df_processed["fpi"].value_counts().sort_index()
+            fpi_labels = {
+                "0": "Long-term growth",
+                "1": "Next fiscal year",
+                "2": "Year after next",
+                "6": "Current fiscal quarter",
+            }
+            for fpi, count in fpi_counts.items():
+                label = fpi_labels.get(str(fpi), "Unknown")
+                print(f"  FPI {fpi} ({label}): {count} records")
+
+        print("\nColumn names:")
+        print(list(df_processed.columns))
+
+        print("\nSample data (first 10 rows):")
+        print(df_processed.head(10))
+
+        print("\nData summary:")
+        print(df_processed.describe())
+    else:
+        print("\nNo data to save after processing.")
+
+    rd.close_session()
+    print("\n" + "=" * 70)
+    print("Download complete!")
+
 
 if __name__ == "__main__":
     main()
-
