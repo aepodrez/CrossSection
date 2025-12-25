@@ -20,6 +20,7 @@ Notes:
 - Calculates institutional ownership metrics:
   * numinstown: Number of institutional owners
   * instown_perc: Institutional ownership percentage
+  * maxinstown_perc: Largest single institutional owner's percent stake
   * dbreadth: Quarterly change in number of institutional owners
 - Historical data typically available from ~2000 onwards
 - Free but may be slow for large universes (processes all 13F filings)
@@ -309,12 +310,19 @@ def fetch_13f_holdings_data(tickers, ticker_to_permno, start_date):
     # Aggregate by permno-quarter
     print(f"\n📊 Aggregating holdings by permno-quarter...")
     
-    agg_df = holdings_df.groupby(['permno', 'year', 'quarter']).agg({
-        'manager_cik': 'nunique',  # Number of unique institutional owners
-        'shares': 'sum'  # Total shares held by institutions
-    }).reset_index()
+    # First sum shares at the manager level within each permno-quarter
+    mgr_totals = (
+        holdings_df.groupby(['permno', 'year', 'quarter', 'manager_cik'])['shares']
+        .sum()
+        .reset_index()
+    )
     
-    agg_df.columns = ['permno', 'year', 'quarter', 'numinstown', 'total_shares']
+    # Then aggregate to permno-quarter with counts, totals, and max single-owner stake
+    agg_df = mgr_totals.groupby(['permno', 'year', 'quarter']).agg(
+        numinstown=('manager_cik', 'nunique'),
+        total_shares=('shares', 'sum'),
+        maxinst_shares=('shares', 'max'),
+    ).reset_index()
     
     print(f"✓ Aggregated to {len(agg_df)} permno-quarter observations")
     print(f"  Unique stocks: {agg_df['permno'].nunique()}")
@@ -330,6 +338,7 @@ def calculate_institutional_metrics(holdings_df, ticker_to_permno):
     - numinstown: Number of institutional owners (already calculated)
     - dbreadth: Quarterly change in number of institutional owners
     - instown_perc: Institutional ownership percentage (requires shares outstanding)
+    - maxinstown_perc: Largest single institutional owner's percent stake
     """
     
     if holdings_df.empty:
@@ -383,11 +392,22 @@ def calculate_institutional_metrics(holdings_df, ticker_to_permno):
         holdings_df['shares_outstanding'] = holdings_df['permno'].map(shares_outstanding_map)
         holdings_df['instown_perc'] = (holdings_df['total_shares'] / holdings_df['shares_outstanding'] * 100).clip(0, 100)
         
+        # Calculate largest single institutional owner's percentage stake
+        if 'maxinst_shares' in holdings_df.columns:
+            holdings_df['maxinstown_perc'] = (
+                holdings_df['maxinst_shares'] / holdings_df['shares_outstanding'] * 100
+            ).clip(0, 100)
+        else:
+            holdings_df['maxinstown_perc'] = np.nan
+        
         print(f"✓ Calculated instown_perc for {holdings_df['instown_perc'].notna().sum()} observations")
+        if 'maxinstown_perc' in holdings_df.columns:
+            print(f"✓ Calculated maxinstown_perc for {holdings_df['maxinstown_perc'].notna().sum()} observations")
         
     except Exception as e:
         print(f"⚠️  Could not calculate institutional ownership percentage: {e}")
         holdings_df['instown_perc'] = np.nan
+        holdings_df['maxinstown_perc'] = np.nan
     
     return holdings_df
 
@@ -529,10 +549,10 @@ def main():
     print(f"\n💾 Preparing final output...")
     
     # Select and order columns to match original format
-    output_cols = ['permno', 'time_avail_m', 'numinstown', 'dbreadth', 'instown_perc']
+    output_cols = ['permno', 'time_avail_m', 'numinstown', 'dbreadth', 'instown_perc', 'maxinstown_perc']
     
     # Add additional columns if available
-    for col in ['total_shares', 'shares_outstanding']:
+    for col in ['total_shares', 'shares_outstanding', 'maxinst_shares']:
         if col in final_df.columns:
             output_cols.append(col)
     
@@ -561,6 +581,7 @@ def main():
     print(f"    numinstown: {final_df['numinstown'].notna().sum():,} non-null ({final_df['numinstown'].notna().mean()*100:.1f}%)")
     print(f"    dbreadth: {final_df['dbreadth'].notna().sum():,} non-null ({final_df['dbreadth'].notna().mean()*100:.1f}%)")
     print(f"    instown_perc: {final_df['instown_perc'].notna().sum():,} non-null ({final_df['instown_perc'].notna().mean()*100:.1f}%)")
+    print(f"    maxinstown_perc: {final_df['maxinstown_perc'].notna().sum():,} non-null ({final_df['maxinstown_perc'].notna().mean()*100:.1f}%)")
     
     print(f"\n  Mean values:")
     print(f"    Avg institutional owners: {final_df['numinstown'].mean():.1f}")
@@ -583,4 +604,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -35,6 +35,13 @@ import json
 from dotenv import load_dotenv
 warnings.filterwarnings('ignore')
 
+# Optional free price source for prcc_f
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -550,6 +557,79 @@ def extract_dei_value(xbrl, tags, debug=False):
 
 
 # =============================================================================
+# SIC MAPPING (STATIC FILE)
+# =============================================================================
+
+def load_sic_mapping():
+    """
+    Load ticker -> SIC mapping from static Excel (similar to AP_CRSPMonthly).
+    Returns a dict with uppercase ticker keys.
+    """
+    mapping_path = Path("../pyData/Static/ticker_sic_mapping.xlsx")
+    if not mapping_path.exists():
+        print("⚠️  ticker_sic_mapping.xlsx not found; SIC columns will be empty.")
+        return {}
+    try:
+        data = pd.read_excel(mapping_path)
+        ticker_col = None
+        sic_col = None
+        for col in data.columns:
+            col_lower = str(col).strip().lower()
+            if col_lower in ['ticker', 'tic', 'symbol']:
+                ticker_col = col
+            if col_lower in ['sic', 'siccrsp']:
+                sic_col = col
+        if ticker_col is None or sic_col is None:
+            print("⚠️  ticker_sic_mapping.xlsx missing ticker/sic columns; skipping SIC enrichment.")
+            return {}
+        mapping = {}
+        for _, row in data.iterrows():
+            tic = row.get(ticker_col)
+            sic = row.get(sic_col)
+            if pd.notna(tic) and pd.notna(sic):
+                try:
+                    mapping[str(tic).upper()] = int(sic)
+                except Exception:
+                    continue
+        print(f"✓ Loaded {len(mapping)} SIC mappings from {mapping_path.name}")
+        return mapping
+    except Exception as e:
+        print(f"⚠️  Could not load {mapping_path.name}: {e}")
+        return {}
+
+
+def add_sic_codes(df: pd.DataFrame, sic_map: Dict[str, int]) -> pd.DataFrame:
+    """
+    Attach SIC (and sic2D) columns using a ticker->SIC mapping.
+    """
+    if df.empty:
+        return df
+    df = df.copy()
+    if 'ticker' not in df.columns:
+        print("⚠️  Ticker column missing; cannot attach SIC codes.")
+        return df
+    if not sic_map:
+        if 'sic' not in df.columns:
+            df['sic'] = pd.Series(pd.NA, index=df.index, dtype='Int64')
+        else:
+            df['sic'] = pd.to_numeric(df['sic'], errors='coerce').astype('Int64')
+        df['sic2D'] = pd.Series(pd.NA, index=df.index, dtype='Int64')
+        return df
+    prev_non_null = df['sic'].notna().sum() if 'sic' in df.columns else 0
+    mapped = df['ticker'].astype(str).str.upper().map(sic_map)
+    if 'sic' in df.columns:
+        df['sic'] = pd.to_numeric(df['sic'], errors='coerce')
+        df['sic'] = df['sic'].fillna(mapped)
+    else:
+        df['sic'] = mapped
+    df['sic'] = pd.to_numeric(df['sic'], errors='coerce').astype('Int64')
+    df['sic2D'] = (df['sic'] // 100).astype('Int64')
+    added = df['sic'].notna().sum() - prev_non_null
+    print(f"✓ Added SIC codes for {max(added, 0)} records (total with SIC: {df['sic'].notna().sum()})")
+    return df
+
+
+# =============================================================================
 # TICKER TO CIK MAPPING (FALLBACK FOR EDGARTOOLS LIMITATION)
 # =============================================================================
 
@@ -863,6 +943,24 @@ def process_compustat_annual_alternative(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[mask2, 'dr'] = df.loc[mask2, 'drc']
     mask3 = df['drc'].isna() & df['drlt'].notna()
     df.loc[mask3, 'dr'] = df.loc[mask3, 'drlt']
+
+    # Create derived variable: convertible debt (dc)
+    df['dc'] = np.nan
+    mask_dc1 = (
+        (df['dcpstk'] > df['pstk']) &
+        df['pstk'].notna() &
+        df['dcpstk'].notna() &
+        df['dcvt'].isna()
+    )
+    df.loc[mask_dc1, 'dc'] = df.loc[mask_dc1, 'dcpstk'] - df.loc[mask_dc1, 'pstk']
+    mask_dc2 = (
+        df['pstk'].isna() &
+        df['dcpstk'].notna() &
+        df['dcvt'].isna()
+    )
+    df.loc[mask_dc2, 'dc'] = df.loc[mask_dc2, 'dcpstk']
+    mask_dc3 = df['dc'].isna()
+    df.loc[mask_dc3, 'dc'] = df.loc[mask_dc3, 'dcvt']
     
     # Create zero-filled versions
     df['xint0'] = df['xint'].fillna(0)
@@ -980,6 +1078,68 @@ def link_to_crsp(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
 
+def add_year_end_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Populate prcc_f (fiscal year-end price) using free yfinance data.
+    """
+    if df.empty:
+        return df
+    if not YFINANCE_AVAILABLE:
+        print("⚠️  yfinance not installed; prcc_f will remain empty")
+        return df
+    
+    df = df.copy()
+    price_cache: Dict = {}
+    
+    def fetch_price(ticker: str, datadate) -> Optional[float]:
+        if pd.isna(ticker) or pd.isna(datadate):
+            return np.nan
+        try:
+            date = pd.to_datetime(datadate).normalize()
+            cache_key = (ticker, date.date())
+            if cache_key in price_cache:
+                return price_cache[cache_key]
+            
+            start = date - pd.Timedelta(days=10)
+            end = date + pd.Timedelta(days=5)
+            hist = yf.download(
+                ticker,
+                start=start.strftime("%Y-%m-%d"),
+                end=(end + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                progress=False,
+                auto_adjust=False,
+                threads=False,
+            )
+            if hist.empty:
+                price_cache[cache_key] = np.nan
+                return np.nan
+            
+            hist.index = pd.to_datetime(hist.index)
+            price_col = 'Adj Close' if 'Adj Close' in hist.columns else 'Close'
+            on_or_before = hist[hist.index <= date]
+            if not on_or_before.empty:
+                val = float(on_or_before.iloc[-1][price_col])
+            else:
+                val = float(hist.iloc[0][price_col])
+            price_cache[cache_key] = val
+            return val
+        except Exception:
+            return np.nan
+    
+    df['prcc_f'] = [
+        fetch_price(row['ticker'], row['datadate'])
+        for _, row in df.iterrows()
+    ]
+    
+    fetched = df['prcc_f'].notna().sum()
+    if fetched:
+        print(f"✓ Added prcc_f for {fetched} rows using yfinance", flush=True)
+    else:
+        print("⚠️  prcc_f could not be fetched from yfinance", flush=True)
+    
+    return df
+
+
 def create_monthly_version(annual_data: pd.DataFrame) -> pd.DataFrame:
     """
     Create monthly version by expanding annual data (same as Compustat processing).
@@ -1059,6 +1219,9 @@ def main():
         SAMPLE_TICKERS = [t.strip().upper() for t in override.split(',') if t.strip()]
         print(f"\n📊 Override tickers from input: {', '.join(SAMPLE_TICKERS)}\n")
     
+    # Load SIC mapping from static file (same approach as AP_monthlyCRSP)
+    sic_map = load_sic_mapping()
+    
     if not EDGARTOOLS_AVAILABLE:
         print("=" * 60)
         print("⚠️  DEMO MODE: Creating sample data structure only")
@@ -1097,6 +1260,12 @@ def main():
     # Link to CRSP
     print("Linking to CRSP...")
     processed_data = link_to_crsp(processed_data)
+    
+    # Add SIC codes using static mapping
+    processed_data = add_sic_codes(processed_data, sic_map)
+
+    # Add fiscal year-end prices from free data
+    processed_data = add_year_end_prices(processed_data)
     
     # Create output directory
     output_dir = Path("../pyData/Intermediate/")

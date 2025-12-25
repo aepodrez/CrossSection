@@ -90,8 +90,31 @@ def build_master():
     df = monthly.merge(comp, on=["permno", "time_avail_m"], how="left")
 
     # Optional/empty identifiers to match schema
-    df["tickerIBES"] = ""
-    df["score"] = pd.Series(pd.NA, index=df.index, dtype="Int16")
+    # Add IBES ticker (if available)
+    print("Checking for AP IBES-CRSP linking table...")
+    
+    AP_IBESCRSPLink_path = Path("../pyData/Intermediate/AP_IBESCRSPLinkingTable.parquet")
+    if AP_IBESCRSPLink_path.exists():
+        print("Adding AP IBES-CRSP link...")
+        ibes_link = pd.read_parquet(
+            AP_IBESCRSPLink_path,
+            columns=["permno", "time_avail_m", "tickerIBES", "score"],
+        )
+        df = df.merge(ibes_link, on=["permno", "time_avail_m"], how="left")
+        
+        # Standardize IBES ticker string format (handle None -> empty string)
+        if "tickerIBES" in df.columns:
+            df["tickerIBES"] = df["tickerIBES"].fillna("")
+        
+        if "score" in df.columns:
+            df["score"] = pd.to_numeric(df["score"], errors="coerce").astype("Int16")
+        
+        print(f"After IBES link merge: {df.shape[0]} rows, {df.shape[1]} columns")
+    else:
+        print("Not adding AP IBES-CRSP link. Some signals cannot be generated.")
+        df["tickerIBES"] = ""
+        df["score"] = pd.Series(pd.NA, index=df.index, dtype="Int16")
+    
     df["secid"] = np.nan
     df["gvkey"] = df["gvkey"].fillna(df["permno"]).astype("float64")
     df["sicCS"] = df["sicCS"].fillna("")

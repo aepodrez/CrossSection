@@ -1,0 +1,340 @@
+# Group 37 Predictor Analysis: AP Data Column Coverage
+
+## Overview
+This document analyzes whether the AP (Alternative Provider) CSV/parquet files contain all required columns to construct the predictors in Group 37.
+
+---
+
+## 181. ZZ1_grcapx_grcapx1y_grcapx3y.py
+
+### Required Columns:
+- **m_aCompustat.parquet**: `gvkey`, `permno`, `time_avail_m`, `capx`, `ppent`, `at`
+- **SignalMasterTable.parquet**: `permno`, `time_avail_m`, `exchcd`
+
+### AP File Status:
+- ✅ **AP_m_aCompustat.parquet**: 
+  - File exists (from `AP_CompustatAnnual.py`)
+  - Contains `gvkey` (surrogate: CIK/permno) - from `AP_CompustatAnnual.py` structure
+  - Contains `permno`, `time_avail_m` (from `AP_CompustatAnnual.py` structure)
+  - Contains `capx` (capital expenditures) - mapped from XBRL tags (line 321): `['PaymentsToAcquirePropertyPlantAndEquipment', 'CapitalExpendituresIncurredButNotYetPaid', ...]`
+  - Contains `ppent` (property, plant, and equipment net) - mapped from XBRL tags (line 105): `['PropertyPlantAndEquipmentNet']`
+  - Contains `at` (total assets) - mapped from XBRL tags (line 84): `['Assets']`
+  - All required columns are present
+
+- ✅ **AP_SignalMasterTable.parquet**: 
+  - File exists (from `AP_SignalMasterTable.py`)
+  - Contains `permno`, `time_avail_m` (from `AP_SignalMasterTable.py` structure)
+  - Contains `exchcd` (exchange code) - from `AP_SignalMasterTable.py` structure
+  - All required columns are present
+
+### Can Be Constructed?
+**YES** - All required columns are present.
+
+### Additional Work Needed?
+**NONE** - All columns are available.
+
+#### Implementation Notes:
+- Calculates three capital expenditure growth measures:
+  - **grcapx**: 2-year capital expenditure growth = `(capx - l24.capx) / l24.capx`
+  - **grcapx1y**: 1-year capital expenditure growth (lagged) = `(l12.capx - l24.capx) / l24.capx`
+  - **grcapx3y**: 3-year capital expenditure growth = `capx / (l12.capx + l24.capx + l36.capx) * 3`
+- Replaces missing `capx` with change in `ppent` for firms with sufficient age (FirmAge >= 24)
+- Requires minimum 24 months of data for `grcapx` and `grcapx1y`, 36 months for `grcapx3y`
+- Uses firm age calculation to exclude observations where FirmAge equals time since CRSP start
+
+---
+
+## 182. ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP.py
+
+### Required Columns:
+- **m_aCompustat.parquet**: `permno`, `gvkey`, `time_avail_m`, `sale`, `ib`, `dp`, `ni`, `ceq`
+- **SignalMasterTable.parquet**: `permno`, `time_avail_m`, `ret`, `mve_permco`
+
+### AP File Status:
+- ✅ **AP_m_aCompustat.parquet**: 
+  - File exists (from `AP_CompustatAnnual.py`)
+  - Contains `permno`, `time_avail_m` (from `AP_CompustatAnnual.py` structure)
+  - Contains `gvkey` (surrogate: CIK/permno) - from `AP_CompustatAnnual.py` structure
+  - Contains `sale` (sales revenue) - mapped from XBRL tags (line 230): `['Revenues', 'SalesRevenueNet', ...]`
+  - Contains `ib` (income before extraordinary items) - mapped from XBRL tags (line 269-271): `['NetIncomeLoss', 'ProfitLoss', ...]`
+  - Contains `dp` (depreciation and amortization) - mapped from XBRL tags (line 293-295): `['DepreciationAndAmortization', 'DepreciationDepletionAndAmortization', ...]`
+  - Contains `ni` (net income) - mapped from XBRL tags (line 272-274): `['NetIncomeLoss', 'ProfitLoss', ...]`
+  - Contains `ceq` (common equity) - mapped from XBRL tags (line 190-191): `['StockholdersEquity', ...]`
+  - All required columns are present
+
+- ✅ **AP_SignalMasterTable.parquet**: 
+  - File exists (from `AP_SignalMasterTable.py`)
+  - Contains `permno`, `time_avail_m` (from `AP_SignalMasterTable.py` structure)
+  - Contains `ret` (monthly return) - comes from `AP_monthlyCRSP.parquet`
+  - Contains `mve_permco` (market value of equity at permco level) - included in column list (line 128), comes from `AP_monthlyCRSP.parquet`
+  - All required columns are present
+
+### Can Be Constructed?
+**YES** - All required columns are present.
+
+### Additional Work Needed?
+**NONE** - All columns are available.
+
+#### Implementation Notes:
+- Calculates four intangible return predictors using cross-sectional regressions:
+  - **IntanBM**: Intangible return from book-to-market ratio
+  - **IntanSP**: Intangible return from sales-to-price ratio
+  - **IntanCFP**: Intangible return from cash flow-to-price ratio
+  - **IntanEP**: Intangible return from earnings-to-price ratio
+- Uses 60-month calendar-based lags for cumulative returns and accounting measures
+- Runs cross-sectional regressions: `tempRet60 ~ lag60(v) + vRet` for each time period
+- Predictors are residuals from these regressions
+- Winsorizes forecast errors at 1st and 99th percentiles
+- Requires minimum 2 observations per time period for regression
+
+---
+
+## 183. ZZ1_iomom_cust__iomom_supp.py
+
+### Required Columns:
+- **SignalMasterTable.parquet**: `permno`, `gvkey`, `time_avail_m`
+- **InputOutputMomentumProcessed.parquet**: `gvkey`, `time_avail_m`, `retmatchcustomer`, `portindcustomer`, `retmatchsupplier`, `portindsupplier`
+- **InputOutputMomentum_R.csv**: Intermediate file generated by `ZZ1_iomom_cust__iomom_supp.R`
+
+### AP File Status:
+- ✅ **AP_SignalMasterTable.parquet**: 
+  - File exists (from `AP_SignalMasterTable.py`)
+  - Contains `permno`, `time_avail_m` (from `AP_SignalMasterTable.py` structure)
+  - Contains `gvkey` (surrogate: CIK/permno) - line 119, filled from `permno` if missing
+  - All required columns are present
+
+- ⚠️ **InputOutputMomentumProcessed.parquet**: **FILE GENERATED BY R SCRIPT**
+  - File is generated by `ZZ1_iomom_cust__iomom_supp.py` after processing `InputOutputMomentum_R.csv`
+  - `InputOutputMomentum_R.csv` is generated by `ZZ1_iomom_cust__iomom_supp.R`
+  - See analysis of `ZZ1_iomom_cust__iomom_supp.R` below for dependencies
+
+### Can Be Constructed?
+**DEPENDS ON R SCRIPT** - This Python script calls the R script and processes its output. See `ZZ1_iomom_cust__iomom_supp.R` analysis below.
+
+### Additional Work Needed?
+**SEE R SCRIPT ANALYSIS BELOW**
+
+#### Implementation Notes:
+- Python wrapper script that calls `ZZ1_iomom_cust__iomom_supp.R` to calculate input-output momentum
+- Processes R script output (`InputOutputMomentum_R.csv`) to create `InputOutputMomentumProcessed.parquet`
+- Collapses data by averaging `retmatch` and `portind` within `gvkey-time_avail_m-type` groups
+- Reshapes from long to wide format by type (customer/supplier)
+- Creates two predictors:
+  - **iomom_cust**: Customer momentum from `retmatchcustomer`
+  - **iomom_supp**: Supplier momentum from `retmatchsupplier`
+
+---
+
+## 184. ZZ1_iomom_cust__iomom_supp.R
+
+### Required Columns:
+- **CompustatAnnual.csv**: `gvkey`, `datadate`, `naicsh` (NAICS code)
+- **monthlyCRSP.parquet**: `permno`, `time_avail_m`, `ret`, `prc`, `shrout`
+- **CCMLinkingTable.parquet**: `gvkey`, `permno`, `timeLinkStart_d`, `timeLinkEnd_d`, `linkprim`
+- **BEA Input-Output Tables**: 
+  - `IOMake_Before_Redefinitions_1963-1996_Summary.xlsx`
+  - `IOUse_Before_Redefinitions_PRO_1963-1996_Summary.xlsx`
+  - `Supply_Tables_1997-20XX_Summary.xlsx`
+  - `Supply-Use_Framework_1997-20XX_Summary.xlsx`
+
+### AP File Status:
+- ❌ **CompustatAnnual.csv**: **FILE EXISTS BUT MISSING COLUMN**
+  - File exists (from `CompustatAnnual.py` - WRDS version)
+  - Contains `gvkey`, `datadate` (from `CompustatAnnual.py` structure)
+  - **Missing**: `naicsh` (NAICS code) - NOT extracted in `AP_CompustatAnnual.py`
+  - **Note**: This is NOT an AP script - it downloads from WRDS Compustat
+  - **Note**: R script requires `naicsh` to map firms to BEA industries (line 259-264)
+
+- ✅ **AP_monthlyCRSP.parquet**: 
+  - File exists (from `AP_CRSPMonthly.py`)
+  - Contains `permno`, `time_avail_m` (from `AP_CRSPMonthly.py` structure)
+  - Contains `ret` (monthly return) - from `AP_CRSPMonthly.py` structure
+  - Contains `prc` (stock price) - from `AP_CRSPMonthly.py` structure
+  - Contains `shrout` (shares outstanding) - line 348
+  - All required columns are present
+
+- ⚠️ **CCMLinkingTable.parquet**: **FILE EXISTS** (WRDS version)
+  - File exists: `CCMLinkingTable.parquet` (from `CCMLinkingTable.py`)
+  - Contains `gvkey`, `permno`, `timeLinkStart_d`, `timeLinkEnd_d`, `linkprim`
+  - **Note**: This is NOT an AP script - it downloads from WRDS
+  - **Issue**: Uses real Compustat `gvkey` values, while AP Compustat data uses surrogate `gvkey` (CIK/permno)
+  - **Can be used IF**: Using WRDS `CompustatAnnual.csv` (real gvkey) - linking table will match
+  - **Cannot be used IF**: Using AP Compustat data (surrogate gvkey) - linking table won't match
+
+- ⚠️ **BEA Input-Output Tables**: **FILES EXIST BUT FORMAT MISMATCH**
+  - Files exist: Downloaded by `BEAInputOutput.py` (non-AP script) or `AP_BEAInputOutput.py` (AP version)
+  - **Non-AP version** (`BEAInputOutput.py`): Downloads Excel files matching expected names:
+    - `IOMake_Before_Redefinitions_1963-1996_Summary.xlsx`
+    - `IOUse_Before_Redefinitions_PRO_1963-1996_Summary.xlsx`
+    - `Supply_Tables_1997-20XX_Summary.xlsx`
+    - `Supply-Use_Framework_1997-20XX_Summary.xlsx`
+  - **AP version** (`AP_BEAInputOutput.py`): Downloads via BEA API but outputs parquet/CSV files:
+    - `AP_BEA_Supply_Table.parquet` / `.csv`
+    - `AP_BEA_SupplyUse_Framework.parquet` / `.csv`
+  - **Issue**: R script expects specific Excel file names (line 290-296), AP version outputs different format
+  - **Can be used IF**: Using non-AP `BEAInputOutput.py` - files match expected names
+  - **Cannot be used IF**: Using AP version - file names and format don't match
+
+### Can Be Constructed?
+**PARTIALLY** - Multiple issues:
+- ❌ `naicsh` missing from `CompustatAnnual.csv` (AP version doesn't extract NAICS codes)
+- ⚠️ `CCMLinkingTable.parquet` exists but has `gvkey` mismatch (WRDS version uses real gvkey)
+- ⚠️ BEA Input-Output tables format mismatch (AP version outputs different format than expected)
+
+### Additional Work Needed?
+**YES** - Multiple issues:
+
+#### What Needs to Be Done:
+1. **Extract `naicsh` from XBRL DEI section**: 
+   - `naicsh` (NAICS code) is required to map firms to BEA industries
+   - Should be extracted from the DEI (Document and Entity Information) section of XBRL filings
+   - **Solution**: Modify `AP_CompustatAnnual.py` to extract `naicsh` from XBRL DEI section
+   - **Note**: `naicsh` is a 6-digit NAICS code used to match firms to BEA industry codes
+
+2. **Create AP version of CompustatAnnual.csv**: 
+   - R script expects `CompustatAnnual.csv` (not parquet) with specific format
+   - **Solution**: Modify `AP_CompustatAnnual.py` to also output CSV format matching WRDS version
+   - **Note**: CSV format uses Stata-formatted dates (`datadate` as `ddmmmyyyy` lowercase)
+
+3. **Create AP version of CCMLinkingTable.parquet**: 
+   - R script uses `CCMLinkingTable.parquet` to link CRSP `permno` to Compustat `gvkey`
+   - **Solution**: Create `AP_CCMLinkingTable.parquet` that links `permno` to surrogate `gvkey` (CIK/permno)
+   - **Note**: This would allow AP Compustat data to match AP linking table
+
+4. **Modify R script to use AP BEA Input-Output tables**: 
+   - R script expects specific Excel file names, AP version outputs parquet/CSV
+   - **Solution**: Either modify R script to read AP parquet/CSV files, or modify `AP_BEAInputOutput.py` to output Excel format matching expected names
+   - **Note**: R script processes Excel files with specific sheet names and formats (line 45-61)
+
+#### Implementation Notes:
+- Calculates input-output momentum following Menzly-Ozbas (2010) methodology
+- Uses BEA Input-Output tables to identify customer and supplier relationships
+- Maps firms to BEA industries using NAICS codes
+- Calculates value-weighted industry returns
+- Creates momentum portfolios based on matched industry returns
+- Uses 5-year lag from survey to release (line 68)
+- Requires NAICS codes available from 1986 onwards (line 171)
+
+---
+
+## 185. ZZ1_OptionVolume1_OptionVolume2.py
+
+### Required Columns:
+- **SignalMasterTable.parquet**: `permno`, `time_avail_m`, `secid`, `prc`, `shrcd`
+- **monthlyCRSP.parquet**: `permno`, `time_avail_m`, `vol`
+- **OptionMetricsVolume.csv**: `secid`, `date`, `optvolume_js12`
+
+### AP File Status:
+- ⚠️ **AP_SignalMasterTable.parquet**: **MISSING COLUMN**
+  - File exists (from `AP_SignalMasterTable.py`)
+  - Contains `permno`, `time_avail_m` (from `AP_SignalMasterTable.py` structure)
+  - Contains `prc` (stock price) - comes from `AP_monthlyCRSP.parquet`
+  - Contains `shrcd` (share class code) - from `AP_SignalMasterTable.py` structure
+  - **Missing**: `secid` (OptionMetrics security identifier) - initialized to `np.nan` in `AP_SignalMasterTable.py` (line 130)
+  - **Note**: `secid` is required to link to OptionMetrics data
+
+- ✅ **AP_monthlyCRSP.parquet**: 
+  - File exists (from `AP_CRSPMonthly.py`)
+  - Contains `permno`, `time_avail_m` (from `AP_CRSPMonthly.py` structure)
+  - Contains `vol` (trading volume) - from `AP_CRSPMonthly.py` structure
+  - All required columns are present
+
+- ❌ **OptionMetricsVolume.csv**: **FILE DOES NOT EXIST** (proprietary data)
+  - File would be generated by `PrepScripts/OptionMetricsVolume.R` (requires WRDS OptionMetrics access)
+  - Would contain `secid`, `date`, `optvolume_js12` (option trading volume)
+  - **Note**: This is proprietary OptionMetrics data, not available from free sources
+  - **Note**: Requires WRDS OptionMetrics database access
+
+### Can Be Constructed?
+**NO** - Missing required data:
+- ❌ `secid` missing from `AP_SignalMasterTable.parquet`
+- ❌ `OptionMetricsVolume.csv` does not exist (proprietary OptionMetrics data)
+
+### Additional Work Needed?
+**YES** - Multiple issues:
+
+#### What Needs to Be Done:
+1. **Populate `secid` in AP_SignalMasterTable.parquet**: 
+   - `secid` is OptionMetrics security identifier, required to link to OptionMetrics data
+   - **Solution**: Create mapping from `permno` to `secid` using OptionMetrics database or historical mapping files
+   - **Note**: OptionMetrics uses `secid` as primary identifier, CRSP uses `permno` - mapping is complex and time-varying
+   - **Alternative**: If OptionMetrics data is not available, predictor cannot be constructed
+
+2. **Obtain OptionMetricsVolume.csv**: 
+   - OptionMetrics data is proprietary and requires WRDS subscription
+   - **Solution**: Run `PrepScripts/OptionMetricsVolume.R` on WRDS to generate `OptionMetricsVolume.csv`
+   - **Note**: This requires WRDS OptionMetrics database access (not available from free sources)
+   - **Alternative**: If OptionMetrics data is not available, predictor cannot be constructed
+
+#### Implementation Notes:
+- Calculates two option trading volume predictors:
+  - **OptionVolume1**: Option-to-stock volume ratio = `optvolume_js12 / vol`
+  - **OptionVolume2**: Abnormal option volume = `OptionVolume1 / 6-month average of OptionVolume1`
+- Sets `OptionVolume1` to missing if prior period option or stock volume is missing
+- Uses 6-month moving average for `OptionVolume2` calculation
+- Requires `secid` to link OptionMetrics data to CRSP data
+- **Note**: OptionMetrics data is proprietary and not available from free sources
+
+---
+
+## Summary
+
+### Overall Status:
+**2 out of 5 predictors can be constructed** ✅
+
+### Column Availability:
+- ✅ **ZZ1_grcapx_grcapx1y_grcapx3y.py**: All required columns are present
+- ✅ **ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP.py**: All required columns are present
+- ⚠️ **ZZ1_iomom_cust__iomom_supp.py**: Depends on R script (see below)
+- ⚠️ **ZZ1_iomom_cust__iomom_supp.R**: Partially constructible - missing `naicsh`, `gvkey` mismatch, BEA table format mismatch
+- ❌ **ZZ1_OptionVolume1_OptionVolume2.py**: Cannot be constructed - missing `secid` and proprietary OptionMetrics data
+
+### Key Notes:
+1. **For ZZ1_grcapx_grcapx1y_grcapx3y**: 
+   - **VERIFICATION**: Test that `capx`, `ppent`, `at` are correctly populated
+   - Calculates three capital expenditure growth measures using lagged values
+   - Replaces missing `capx` with change in `ppent` for firms with sufficient age
+
+2. **For ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP**: 
+   - **VERIFICATION**: Test that `sale`, `ib`, `dp`, `ni`, `ceq`, `ret`, `mve_permco` are correctly populated
+   - Uses cross-sectional regressions to calculate intangible return predictors
+   - Requires 60-month calendar-based lags for cumulative returns and accounting measures
+
+3. **For ZZ1_iomom_cust__iomom_supp (Python and R)**: 
+   - **VERIFICATION**: Test that `naicsh` is correctly extracted from XBRL DEI section
+   - Requires multiple data sources: CompustatAnnual.csv, CCMLinkingTable.parquet, monthlyCRSP.parquet, BEA Input-Output tables
+   - **Critical Issues**:
+     - `naicsh` missing from AP Compustat data (needs XBRL DEI extraction)
+     - `CCMLinkingTable.parquet` has `gvkey` mismatch (WRDS version uses real gvkey)
+     - BEA Input-Output tables format mismatch (AP version outputs different format)
+   - **Note**: R script expects specific Excel file names and formats, AP version outputs parquet/CSV
+
+4. **For ZZ1_OptionVolume1_OptionVolume2**: 
+   - **VERIFICATION**: Test that `secid` is correctly populated in `AP_SignalMasterTable.parquet`
+   - Requires proprietary OptionMetrics data (`OptionMetricsVolume.csv`)
+   - **Critical Issues**:
+     - `secid` missing from `AP_SignalMasterTable.parquet` (initialized to `np.nan`)
+     - `OptionMetricsVolume.csv` does not exist (proprietary OptionMetrics data)
+   - **Note**: OptionMetrics data is proprietary and requires WRDS subscription
+
+5. **Note on gvkey Surrogate**: 
+   - `gvkey` is not directly available from EDGAR (Compustat-specific identifier)
+   - AP version uses `cik` (SEC identifier) as surrogate, falls back to `permno` if unavailable
+   - For `ZZ1_iomom_cust__iomom_supp.R`, `gvkey` is used for merging with `CCMLinkingTable.parquet`
+   - **Issue**: WRDS `CCMLinkingTable.parquet` uses real Compustat `gvkey`, won't match AP surrogate `gvkey`
+
+6. **Note on File Names**: 
+   - File name mismatches are ignored per user instructions (from Group 19 onwards)
+   - Predictors will need to be modified to use AP file names (`AP_dailyCRSP.parquet`, `AP_monthlyCRSP.parquet`, etc.) or AP files can be renamed to match expected names
+
+7. **Note on Proprietary Data**: 
+   - **OptionMetricsVolume.csv**: Requires proprietary OptionMetrics database access (WRDS subscription)
+   - **CCMLinkingTable.parquet**: Exists but is WRDS version (uses real Compustat `gvkey`)
+   - **CompustatAnnual.csv**: Exists but is WRDS version (requires `naicsh` extraction for AP version)
+
+8. **Note on BEA Input-Output Tables**: 
+   - **Non-AP version** (`BEAInputOutput.py`): Downloads Excel files matching expected names
+   - **AP version** (`AP_BEAInputOutput.py`): Downloads via BEA API but outputs parquet/CSV files
+   - R script expects specific Excel file names and formats
+   - **Solution**: Either modify R script to read AP parquet/CSV files, or modify `AP_BEAInputOutput.py` to output Excel format
+
