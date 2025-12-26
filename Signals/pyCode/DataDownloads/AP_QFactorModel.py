@@ -163,7 +163,8 @@ def get_ticker_to_cik_mapping_qfactor() -> Dict[str, str]:
     url = "https://www.sec.gov/files/company_tickers.json"
     session = requests.Session()
     session.headers.update({
-        'User-Agent': 'AP_QFactorModel/1.0 (test@example.com)',
+        # SEC requests should use your real identity; reuse EDGAR_IDENTITY when available.
+        'User-Agent': EDGAR_IDENTITY or 'AP_QFactorModel/1.0 (your.email@example.com)',
         'Accept': 'application/json'
     })
     
@@ -223,6 +224,43 @@ def get_company_by_ticker_or_cik_qfactor(ticker: str) -> Optional:
 
 
 # -----------------------------------------------------------------------------
+# EDGAR FINANCIALS HELPERS
+# -----------------------------------------------------------------------------
+
+def _get_latest_financials_qfactor(c: Company):
+    """
+    Return standardized Financials for the most recent *non-amended* annual filing.
+
+    Why: `Company.get_financials()` uses `latest_tenk` under the hood, and edgartools'
+    `Company.get_filings(..., amendments=True)` can pick a `10-K/A` as the "latest"
+    annual report. Many 10-K/A filings include only corrected cover pages/exhibits
+    and omit full XBRL statements, which makes standardized statement resolution
+    fail (BalanceSheet/IncomeStatement missing).
+    """
+    annual_forms = ["10-K", "20-F", "40-F"]
+    for form in annual_forms:
+        try:
+            filings = c.get_filings(form=form, amendments=False, trigger_full_load=False)
+            if filings is None or len(filings) == 0:
+                continue
+
+            latest = filings.latest()
+            # `latest()` can return a single Filing or a Filings collection
+            filing = latest[0] if hasattr(latest, "__len__") and not hasattr(latest, "obj") else latest
+            if filing is None:
+                continue
+
+            filing_obj = filing.obj() if hasattr(filing, "obj") else filing
+            fin = getattr(filing_obj, "financials", None)
+            if fin is not None:
+                return fin
+        except Exception:
+            continue
+
+    return None
+
+
+# -----------------------------------------------------------------------------
 # HELPERS
 # -----------------------------------------------------------------------------
 
@@ -276,8 +314,9 @@ def get_ia_roe_from_edgar(ticker: str):
         c = get_company_by_ticker_or_cik_qfactor(ticker)
         if c is None:
             return np.nan, np.nan
-        
-        fin = c.get_financials()
+
+        # Prefer non-amended annual filings (avoid `10-K/A` missing XBRL statements)
+        fin = _get_latest_financials_qfactor(c)
         if fin is None:
             return np.nan, np.nan
 
