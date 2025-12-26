@@ -51,3 +51,7 @@ AGENTS.md
 # Python virtual environment
 venv/
 Signals/pyCode/venv311/
+
+# PrepScripts
+Signals/pyCode/PrepScripts/DownloadOptionMetricsRaw.py
+Signals/pyCode/PrepScripts/OptionMetricsRaw/
