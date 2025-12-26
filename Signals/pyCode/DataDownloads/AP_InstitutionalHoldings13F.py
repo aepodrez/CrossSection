@@ -432,6 +432,13 @@ def forward_fill_to_monthly(quarterly_df):
         year = row['year']
         quarter = row['quarter']
         
+        # Convert to integers, skip if NaN
+        if pd.isna(year) or pd.isna(quarter):
+            continue
+        
+        year = int(year)
+        quarter = int(quarter)
+        
         # Determine months for this quarter
         months = [(quarter - 1) * 3 + m for m in [1, 2, 3]]
         

@@ -1,54 +1,32 @@
-# ABOUTME: Downloads IBES analyst recommendations from Eikon/LSEG API (live data)
-# ABOUTME: Processes recommendation codes (1-5 scale) and creates monthly time availability
-"""
-Inputs:
-- Eikon/LSEG API (via eikon package)
-- EIKON_APP_KEY from .env file
-- Universe of symbols (S&P 500 by default)
-
-Outputs:
-- ../pyData/Intermediate/AP_IBES_Recommendations.parquet
-
-Requirements:
-    pip install eikon pandas python-dotenv
-
-How to run: python AP_IBESRecommendations.py
-
-Notes:
-- Requires active Eikon/Refinitiv subscription
-- Recommendation scale: 1=Strong Buy, 2=Buy, 3=Hold, 4=Sell, 5=Strong Sell
-- Daily frequency data
-- Rate limited: ~5 requests/second
-"""
-
 import os
 import sys
-import pandas as pd
-import numpy as np
+import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import refinitiv.data as rd
 from dotenv import load_dotenv
-import warnings
-warnings.filterwarnings('ignore')
-import time
 
-# Try to import eikon
-try:
-    import eikon as ek
-    EIKON_AVAILABLE = True
-except ImportError:
-    print("⚠️  eikon not installed. Install with: pip install eikon")
-    EIKON_AVAILABLE = False
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
-# Print script header
+from utils.refinitiv_utils import (
+    convert_tickers_to_rics,
+    initialize_refinitiv_platform_session,
+)
+from utils.ibes_utils import rd_get_data_with_refresh
+
+warnings.filterwarnings("ignore")
+
 print("=" * 70, flush=True)
-print("📊 AP_IBESRecommendations.py - IBES Recommendations from Eikon", flush=True)
+print("📊 AP_IBESRecommendations.py - IBES Recommendations from Refinitiv Platform", flush=True)
 print("=" * 70, flush=True)
 
-# Load environment variables
-load_dotenv()
+load_dotenv(BASE_DIR / ".env")
 
-# Output directory
 OUTPUT_DIR = Path("../pyData/Intermediate")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -56,11 +34,14 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # CONFIGURATION
 # =============================================================================
 
-# Date range - Last 2 years
 END_DATE = datetime.now().strftime("%Y-%m-%d")
 START_DATE = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")  # 2 years ago
 
 DEBUG_MODE = False
+HTTP_REQUEST_TIMEOUT = int(os.getenv("RD_HTTP_TIMEOUT", "60"))
+BATCH_SIZE = int(os.getenv("IBES_BATCH_SIZE", "10"))
+MAX_RETRIES = int(os.getenv("RD_MAX_RETRIES", "2"))
+RETRY_BACKOFF = int(os.getenv("RD_RETRY_BACKOFF", "2"))
 
 if DEBUG_MODE:
     START_DATE = "2023-01-01"
@@ -69,218 +50,101 @@ else:
     print(f"🚀 PRODUCTION MODE: {START_DATE} to {END_DATE}")
 
 # =============================================================================
-# HELPER FUNCTIONS (Reuse from AP_IBESEPSAdjusted.py)
+# BULK DOWNLOAD FUNCTION
 # =============================================================================
-
-def convert_to_ric(symbol: str, exchange: str = "NASDAQ") -> str:
-    """Convert ticker to RIC format"""
-    if "." in symbol:
-        return symbol
-    
-    exchange_map = {"NYSE": ".N", "NASDAQ": ".OQ", "AMEX": ".A"}
-    suffix = exchange_map.get(exchange, ".OQ")
-    return f"{symbol}{suffix}"
 
 def load_sp500_universe():
     """Load S&P 500 ticker universe from pickle file."""
     import pickle
     universe_path = Path("../pyData/Static/sp500_universe.pkl")
-    
+
     if universe_path.exists():
         try:
-            with open(universe_path, 'rb') as f:
+            with open(universe_path, "rb") as f:
                 tickers = pickle.load(f)
             print(f"✓ Loaded {len(tickers)} tickers from sp500_universe.pkl")
             return tickers
         except Exception as e:
             print(f"⚠️  Could not load sp500_universe.pkl: {e}")
-    
-    # Fallback: Try to load from AP_CRSPMonthly
+
     ap_crsp_path = Path("../pyData/Intermediate/AP_monthlyCRSP.parquet")
     if ap_crsp_path.exists():
         try:
             print("Loading tickers from AP_monthlyCRSP.parquet...")
-            crsp_df = pd.read_parquet(ap_crsp_path, columns=['ticker'])
-            tickers = crsp_df['ticker'].dropna().unique().tolist()
+            crsp_df = pd.read_parquet(ap_crsp_path, columns=["ticker"])
+            tickers = crsp_df["ticker"].dropna().unique().tolist()
             print(f"✓ Found {len(tickers)} unique tickers from AP_CRSPMonthly")
             return tickers
         except Exception as e:
             print(f"⚠️  Could not load from AP_CRSPMonthly: {e}")
-    
-    # Final fallback: Wikipedia
-    try:
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        df = tables[0]
-        tickers = df['Symbol'].replace('.', '-').tolist()
-        print(f"✓ Retrieved {len(tickers)} S&P 500 tickers from Wikipedia")
-        return tickers
-    except Exception as e:
-        print(f"⚠️  Could not fetch S&P 500 list: {e}")
-        return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META']
+
+    print("⚠️  No universe file found. Using sample tickers.")
+    return ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]
 
 
-def get_sp500_tickers_with_exchange():
-    """Get S&P 500 tickers in RIC format from pickle file."""
-    print("\n" + "="*60)
+def get_sp500_rics():
+    print("\n" + "=" * 60)
     print("📋 Loading ticker universe...")
-    print("="*60)
-    
-    # Load tickers from SP500 universe
+    print("=" * 60)
+
     tickers = load_sp500_universe()
-    
-    # Convert to RIC format
-    ric_symbols = []
-    # Common NYSE tickers
-    nyse_tickers = {
-        'JPM', 'V', 'JNJ', 'WMT', 'PG', 'UNH', 'HD', 'DIS', 'BAC', 'MA',
-        'XOM', 'CVX', 'KO', 'PEP', 'T', 'VZ', 'MRK', 'ABT', 'TMO', 'DHR'
-    }
-    
-    for ticker in tickers:
-        symbol = str(ticker).replace('.', '-').upper()
-        if symbol in nyse_tickers:
-            ric = convert_to_ric(symbol, "NYSE")
-        else:
-            ric = convert_to_ric(symbol, "NASDAQ")
-        ric_symbols.append(ric)
-    
-    print(f"✓ Converted {len(tickers)} tickers to {len(ric_symbols)} RICs")
-    return ric_symbols
+    rics = convert_tickers_to_rics(
+        tickers,
+        batch_size=BATCH_SIZE,
+        max_retries=MAX_RETRIES,
+        retry_backoff=RETRY_BACKOFF,
+    )
+    print(f"\n📊 Processing {len(rics)} instruments")
+    return rics
 
-def connect_eikon():
-    """Connect to Eikon API"""
-    if not EIKON_AVAILABLE:
-        return False
-    
-    eikon_app_key = os.getenv("EIKON_APP_KEY")
-    if not eikon_app_key:
-        print("\n❌ EIKON_APP_KEY not found in .env file")
-        return False
-    
-    try:
-        ek.set_app_key(eikon_app_key)
-        test_df, test_err = ek.get_data(["AAPL.OQ"], ["TR.CompanyName"])
-        if test_err:
-            print(f"❌ Eikon connection test failed: {test_err}")
-            return False
-        print("✓ Eikon connection successful")
-        return True
-    except Exception as e:
-        print(f"❌ Eikon connection error: {e}")
-        return False
 
-# =============================================================================
-# BULK DOWNLOAD FUNCTION
-# =============================================================================
-
-def bulk_download_ibes_recommendations(symbols, start_date, end_date):
-    """
-    Bulk download IBES analyst recommendations from Eikon.
-    
-    Per IBESGuide.md specifications.
-    """
-    
-    # Eikon fields for IBES recommendations
+def bulk_download_ibes_recommendations(rics, start_date, end_date):
+    """Download IBES analyst recommendations via Refinitiv Platform."""
     fields = [
-        "TR.RecEstValue.date",          # Date
-        "TR.RecEstValue",               # Recommendation code (1-5)
-        "TR.BrkRecLabel",               # Recommendation text
-        "TR.RecLabelEstBrokerName",     # Broker name
-        "TR.AnalystName"                # Analyst name
+        "TR.RecEstValue.date",  # Date
+        "TR.RecEstValue",  # Recommendation code (1-5)
+        "TR.BrkRecLabel",  # Recommendation text
+        "TR.RecLabelEstBrokerName",  # Broker name
+        "TR.AnalystName",  # Analyst name
     ]
-    
-    # Parameters per IBESGuide.md
+
     params = {
         "Scale": 6,
         "SDate": start_date,
         "EDate": end_date,
-        "FRQ": "D",              # Daily frequency
+        "FRQ": "D",
         "Curn": "USD",
-        "RH": "date",
     }
-    
+
     all_data = []
-    batch_size = 50
-    successful = 0
-    failed = 0
-    
-    total_symbols = len(symbols)
-    
-    for i in range(0, len(symbols), batch_size):
-        batch = symbols[i:i+batch_size]
-        
-        print(f"  Processing batch {i//batch_size + 1}/{(total_symbols-1)//batch_size + 1}")
-        
-        for symbol in batch:
-            try:
-                df, err = ek.get_data([symbol], fields, params)
-                
-                if err:
-                    failed += 1
-                    continue
-                
-                if df is None or df.empty:
-                    failed += 1
-                    continue
-                
-                # Add symbol column
-                df["Instrument"] = symbol
-                
-                # Rename columns (handle Eikon's actual column names)
-                rename_map = {}
-                for col in df.columns:
-                    if "RecEstValue.date" in col:
-                        rename_map[col] = "anndats"
-                    elif "RecEstValue" in col and "date" not in col:
-                        rename_map[col] = "ireccd"
-                    elif "BrkRecLabel" in col or "Broker Rec" in col:
-                        rename_map[col] = "itext"
-                    elif "Broker Name" in col or "BrokerName" in col:
-                        rename_map[col] = "broker_name"
-                    elif "Analyst" in col and "Name" in col:
-                        rename_map[col] = "analyst_name"
-                
-                df = df.rename(columns=rename_map)
-                
-                # Convert recommendation code to numeric
-                if "ireccd" in df.columns:
-                    df["ireccd"] = pd.to_numeric(df["ireccd"], errors="coerce")
-                
-                # Parse date
-                if "anndats" in df.columns:
-                    df["anndats"] = pd.to_datetime(df["anndats"], errors="coerce")
-                
-                # Create analyst mask code (broker + analyst name)
-                if "broker_name" in df.columns and "analyst_name" in df.columns:
-                    df["amaskcd"] = df["broker_name"].astype(str) + "_" + df["analyst_name"].astype(str)
-                else:
-                    df["amaskcd"] = ""
-                
-                all_data.append(df)
-                successful += 1
-                
-                # Rate limiting
-                time.sleep(0.2)
-                
-            except Exception as e:
-                failed += 1
-                continue
-        
-        # Delay between batches
-        time.sleep(2)
-    
-    print(f"✓ Downloaded data for {successful}/{total_symbols} symbols (failed: {failed})")
-    
+    total_symbols = len(rics)
+
+    for i in range(0, len(rics), BATCH_SIZE):
+        batch = rics[i : i + BATCH_SIZE]
+        print(f"  Batch {i//BATCH_SIZE + 1}/{(total_symbols-1)//BATCH_SIZE + 1} ({len(batch)} instruments)...", end=" ")
+
+        df_batch = rd_get_data_with_refresh(
+            universe=batch,
+            fields=fields,
+            parameters=params,
+            max_retries=MAX_RETRIES,
+            retry_backoff=RETRY_BACKOFF,
+            http_timeout=HTTP_REQUEST_TIMEOUT,
+            error_prefix="Error",
+            print_inline=True,
+        )
+
+        if not df_batch.empty:
+            all_data.append(df_batch)
+            print(f"Retrieved {len(df_batch)} records")
+        else:
+            print("No data")
+
     if not all_data:
         return pd.DataFrame()
-    
-    # Combine all data
+
     result = pd.concat(all_data, ignore_index=True)
-    
-    # Extract ticker from RIC
     result["tickerIBES"] = result["Instrument"].str.split(".").str[0]
-    
     return result
 
 # =============================================================================
@@ -325,75 +189,61 @@ def process_recommendations_data(df):
 
 def main():
     """Main execution function"""
-    
-    if not EIKON_AVAILABLE:
-        print("\n❌ Cannot proceed without eikon package. Please install:")
-        print("   pip install eikon")
-        sys.exit(1)
-    
-    # Connect to Eikon
-    if not connect_eikon():
-        print("\n❌ Eikon connection failed")
-        sys.exit(1)
-    
-    # Get ticker universe
-    print(f"\n📋 Loading ticker universe...")
+    initialize_refinitiv_platform_session(http_timeout=HTTP_REQUEST_TIMEOUT)
+
     if DEBUG_MODE:
-        symbols = ["AAPL.OQ", "MSFT.OQ", "GOOGL.OQ", "AMZN.OQ", "META.OQ"]
-        print(f"  DEBUG MODE: Using {len(symbols)} sample tickers")
+        rics = ["AAPL.O", "MSFT.O", "GOOGL.O", "AMZN.O", "META.O"]
+        print(f"\nDEBUG MODE: Using {len(rics)} sample tickers")
     else:
-        symbols = get_sp500_tickers_with_exchange()
-    
-    # Download IBES recommendations
-    print(f"\n📥 Downloading IBES recommendations from Eikon...")
-    rec_df = bulk_download_ibes_recommendations(symbols, START_DATE, END_DATE)
-    
+        rics = get_sp500_rics()
+
+    print(f"\n📥 Downloading IBES recommendations from Refinitiv Platform...")
+    rec_df = bulk_download_ibes_recommendations(rics, START_DATE, END_DATE)
+
     if rec_df.empty:
         print("\n❌ No recommendations data retrieved")
+        rd.close_session()
         sys.exit(1)
-    
-    # Process data
+
     final_df = process_recommendations_data(rec_df)
-    
+
     if final_df.empty:
         print("\n❌ Data processing resulted in empty DataFrame")
+        rd.close_session()
         sys.exit(1)
-    
-    # Save output
+
     print(f"\n💾 Saving output...")
-    
     output_file = OUTPUT_DIR / "AP_IBES_Recommendations.parquet"
     final_df.to_parquet(output_file, index=False)
-    
+
     print(f"  ✓ Saved: {output_file}")
     print(f"    Records: {len(final_df):,}")
     print(f"    Size: {output_file.stat().st_size / 1024:.1f} KB")
-    
-    # Generate summary
+
     print(f"\n📊 Summary Statistics:")
     print(f"  Total observations: {len(final_df):,}")
     print(f"  Unique tickers: {final_df['tickerIBES'].nunique()}")
-    
-    if 'time_avail_m' in final_df.columns:
+
+    if "time_avail_m" in final_df.columns:
         print(f"  Date range: {final_df['time_avail_m'].min()} to {final_df['time_avail_m'].max()}")
         print(f"  Months covered: {final_df['time_avail_m'].nunique()}")
-    
-    # Recommendation distribution
-    if 'ireccd' in final_df.columns:
+
+    if "ireccd" in final_df.columns:
         print(f"\n  Recommendation distribution:")
-        rec_counts = final_df['ireccd'].value_counts().sort_index()
-        rec_labels = {1: 'Strong Buy', 2: 'Buy', 3: 'Hold', 4: 'Sell', 5: 'Strong Sell'}
+        rec_counts = final_df["ireccd"].value_counts().sort_index()
+        rec_labels = {1: "Strong Buy", 2: "Buy", 3: "Hold", 4: "Sell", 5: "Strong Sell"}
         for code, count in rec_counts.items():
-            label = rec_labels.get(int(code), f'Unknown ({int(code)})')
+            label = rec_labels.get(int(code), f"Unknown ({int(code)})")
             pct = count / len(final_df) * 100
             print(f"    {int(code)} ({label}): {count:,} ({pct:.1f}%)")
-    
-    # Sample data
+
     print(f"\n  Sample data:")
-    sample_cols = ['tickerIBES', 'amaskcd', 'anndats', 'time_avail_m', 'ireccd']
+    sample_cols = ["tickerIBES", "amaskcd", "anndats", "time_avail_m", "ireccd"]
     available_cols = [col for col in sample_cols if col in final_df.columns]
     print(final_df[available_cols].head(10).to_string(index=False))
-    
+
+    rd.close_session()
+
     print("\n" + "=" * 70)
     print("✅ AP_IBESRecommendations.py completed successfully!")
     print("=" * 70)
@@ -403,8 +253,7 @@ def main():
     print("  - Use AP_IBES_Recommendations.parquet in place of IBES_Recommendations.parquet")
     print("  - Use for recommendation-based predictors (ConsRecomm, Recomm_ShortInterest)")
     print("\n💡 Data Source:")
-    print("  - Eikon/LSEG API (proprietary, requires subscription)")
+    print("  - Refinitiv Platform (proprietary, requires subscription)")
 
 if __name__ == "__main__":
     main()
-

@@ -59,6 +59,71 @@ OUTPUT_PARQUET = os.path.join(BASE_DIR, "..", "pyData", "Intermediate", "d_qfact
 # How far back to build daily factor series - Last 2 years
 LOOKBACK_DAYS = 730  # 2 years (730 days)
 
+# Debug print throttles
+MAX_FASTINFO_DEBUG = 10
+
+
+def _to_yfinance_ticker(ticker: str) -> str:
+    """
+    yfinance (Yahoo) typically uses '-' instead of '.' for share-class tickers
+    (e.g., BRK.B -> BRK-B, BF.B -> BF-B).
+    """
+    if ticker is None:
+        return ticker
+    return str(ticker).strip().upper().replace(".", "-")
+
+
+def _extract_close_from_yf_download(df: pd.DataFrame) -> pd.Series:
+    """
+    Extract an adjusted-close-like price series from yfinance output.
+
+    Notes:
+    - When `auto_adjust=True`, yfinance's `Close` is already adjusted; `Adj Close`
+      may be absent.
+    - yfinance may return either flat columns or a MultiIndex (with ticker/field
+      order depending on arguments/version).
+    """
+    if df is None or getattr(df, "empty", True):
+        return pd.Series(dtype="float64")
+
+    # MultiIndex columns: pick Close first, then Adj Close.
+    if isinstance(df.columns, pd.MultiIndex):
+        levels = []
+        for lvl in range(df.columns.nlevels):
+            try:
+                levels.append(set(map(str, df.columns.get_level_values(lvl).unique())))
+            except Exception:
+                levels.append(set())
+
+        def _try_field(field: str) -> Optional[pd.Series]:
+            for lvl, vals in enumerate(levels):
+                if field in vals:
+                    out = df.xs(field, axis=1, level=lvl)
+                    if isinstance(out, pd.Series):
+                        return out
+                    if isinstance(out, pd.DataFrame):
+                        if out.shape[1] == 1:
+                            return out.iloc[:, 0]
+                        # If multiple tickers, the caller must decide; default to first.
+                        return out.iloc[:, 0]
+            return None
+
+        s = _try_field("Close")
+        if s is None:
+            s = _try_field("Adj Close")
+        if s is None:
+            raise KeyError("Could not find 'Close' or 'Adj Close' in yfinance download columns.")
+        return s.sort_index()
+
+    # Flat columns
+    if "Close" in df.columns:
+        return df["Close"].sort_index()
+    if "Adj Close" in df.columns:
+        return df["Adj Close"].sort_index()
+    if df.shape[1] == 1:
+        return df.iloc[:, 0].sort_index()
+    raise KeyError("Could not find 'Close' or 'Adj Close' in yfinance download output.")
+
 # -----------------------------------------------------------------------------
 # INIT
 # -----------------------------------------------------------------------------
@@ -279,8 +344,18 @@ def download_prices(tickers: list, start_date: datetime, end_date: datetime) -> 
         flush=True,
     )
 
+    original_tickers = [str(t).strip().upper() for t in tickers]
+    yf_tickers = [_to_yfinance_ticker(t) for t in original_tickers]
+    # Keep first occurrence if duplicates arise after normalization
+    mapping_original_to_yf = {}
+    for orig, yft in zip(original_tickers, yf_tickers):
+        mapping_original_to_yf.setdefault(orig, yft)
+    mapping_yf_to_original = {}
+    for orig, yft in mapping_original_to_yf.items():
+        mapping_yf_to_original.setdefault(yft, orig)
+
     data = yf.download(
-        tickers=tickers,
+        tickers=list(mapping_yf_to_original.keys()),
         start=start_date,
         end=end_date + timedelta(days=1),  # inclusive end
         auto_adjust=True,
@@ -289,14 +364,86 @@ def download_prices(tickers: list, start_date: datetime, end_date: datetime) -> 
         threads=True,
     )
 
+    # Debug the shape/columns coming back from yfinance
+    print(
+        f"[DEBUG] yf.download returned type={type(data)}, columns_type={type(data.columns)}, "
+        f"raw_shape={getattr(data, 'shape', None)}",
+        flush=True,
+    )
+    if isinstance(data.columns, pd.MultiIndex):
+        lvl0 = data.columns.get_level_values(0)
+        lvl1 = data.columns.get_level_values(1)
+        print(
+            f"[DEBUG] MultiIndex levels: level0 unique={len(set(lvl0))}, "
+            f"level1 unique={lvl1.unique().tolist()}",
+            flush=True,
+        )
+        print(f"[DEBUG] level0 sample: {list(lvl0[:5])}", flush=True)
+        print(f"[DEBUG] raw columns sample: {list(data.columns[:10])}", flush=True)
+    else:
+        print(f"[DEBUG] Single columns sample: {list(data.columns[:10])}", flush=True)
+
     # yfinance shape depends on whether you pass a list or string.
     if isinstance(data.columns, pd.MultiIndex):
-        # Keep only Adj Close
-        data = data.xs("Adj Close", axis=1, level=1)
+        # With auto_adjust=True, "Close" is already adjusted; "Adj Close" may be missing.
+        fields_by_level = []
+        for lvl in range(data.columns.nlevels):
+            try:
+                fields_by_level.append(set(map(str, data.columns.get_level_values(lvl).unique())))
+            except Exception:
+                fields_by_level.append(set())
+
+        field_level = None
+        field_name = None
+        if "Close" in fields_by_level[1]:
+            field_level = 1
+            field_name = "Close"
+        elif "Close" in fields_by_level[0]:
+            field_level = 0
+            field_name = "Close"
+        elif "Adj Close" in fields_by_level[1]:
+            field_level = 1
+            field_name = "Adj Close"
+        elif "Adj Close" in fields_by_level[0]:
+            field_level = 0
+            field_name = "Adj Close"
+
+        if field_level is None or field_name is None:
+            raise RuntimeError(
+                f"Could not locate Close/Adj Close in yfinance columns levels: {fields_by_level}"
+            )
+
+        data = data.xs(field_name, axis=1, level=field_level)
     else:
         # Single ticker -> Series; convert to DataFrame
         if len(tickers) == 1:
             data = data.to_frame(name=tickers[0])
+
+    print(
+        f"[DEBUG] After extracting Close/Adj Close: shape={data.shape}, "
+        f"columns_count={len(data.columns)}, columns_sample={list(data.columns[:10])}",
+        flush=True,
+    )
+
+    # Rename yfinance tickers back to the originals (e.g., BRK-B -> BRK.B)
+    try:
+        data = data.rename(columns=mapping_yf_to_original)
+    except Exception as e:
+        print(f"[DEBUG] Column rename back to original tickers failed: {e}", flush=True)
+
+    # Debug missingness and coverage
+    col_nonnull = data.notna().sum(axis=0)
+    cols_with_any = int((col_nonnull > 0).sum())
+    print(
+        f"[DEBUG] Price coverage: columns_with_any_data={cols_with_any} of {data.shape[1]}",
+        flush=True,
+    )
+    missing_cols = [t for t in original_tickers if t not in set(data.columns)]
+    if missing_cols:
+        print(
+            f"[DEBUG] Missing expected price columns: {len(missing_cols)} sample={missing_cols[:20]}",
+            flush=True,
+        )
 
     data = data.sort_index()
     print(f"Downloaded price matrix shape: {data.shape}", flush=True)
@@ -323,7 +470,7 @@ def get_shares_history_for_universe(
     for i, tk in enumerate(tickers, start=1):
         print(f"[{i}/{len(tickers)}] Pulling share history from yfinance for {tk}...", flush=True)
         try:
-            t = yf.Ticker(tk)
+            t = yf.Ticker(_to_yfinance_ticker(tk))
 
             # --- Try get_shares_full first (best source) ---
             shares_df = None
@@ -400,6 +547,11 @@ def get_shares_on_date(shares_panel: pd.DataFrame, asof_date: datetime) -> pd.Se
         tmp.groupby("ticker")
         .tail(1)
         .set_index("ticker")["shares"]
+    )
+
+    print(
+        f"[DEBUG] Shares as of {asof_date.date()}: {last.notna().sum()} tickers with data",
+        flush=True,
     )
 
     return last
@@ -539,9 +691,11 @@ def get_market_factor(dates: pd.DatetimeIndex) -> pd.Series:
         end=end + timedelta(days=1),
         auto_adjust=True,
         progress=False,
-    )["Adj Close"].sort_index()
+    )
 
-    spy_ret = spy_prices.pct_change()
+    spy_prices = _extract_close_from_yf_download(spy_prices)
+
+    spy_ret = spy_prices.pct_change(fill_method=None)
     spy_ret = spy_ret.reindex(dates).astype(float)
     return spy_ret
 
@@ -643,22 +797,72 @@ def main():
     shares_on_form_date = shares_on_form_date.reindex(fund["ticker"]).astype(float)
     price_on_form_date = price_on_form_date.reindex(fund["ticker"]).astype(float)
 
+    print(
+        f"[DEBUG] price_on_form_date non-null: {price_on_form_date.notna().sum()} "
+        f"of {len(price_on_form_date)}",
+        flush=True,
+    )
+    print(
+        f"[DEBUG] shares_on_form_date non-null: {shares_on_form_date.notna().sum()} "
+        f"of {len(shares_on_form_date)}",
+        flush=True,
+    )
+
     mkt_cap_hist = shares_on_form_date * price_on_form_date
+    print(
+        f"[DEBUG] Historical market cap non-null: {mkt_cap_hist.notna().sum()} "
+        f"of {len(mkt_cap_hist)}",
+        flush=True,
+    )
 
     # 6) Fallback market cap via yfinance.fast_info
     print("Fetching fallback market caps via yfinance.fast_info...", flush=True)
     size_rows = []
+    debug_missing = 0
+    debug_used_alt = 0
+    debug_alt_prints = 0
     for i, tk in enumerate(fund["ticker"].tolist(), start=1):
         try:
             print(f"  [{i}/{len(fund)}] {tk}", flush=True)
-            info = yf.Ticker(tk).fast_info
-            mcap = info.get("market_cap", np.nan)
+            info = yf.Ticker(_to_yfinance_ticker(tk)).fast_info
+            mcap = info.get("market_cap", np.nan) if hasattr(info, "get") else np.nan
+            mcap_alt = info.get("marketCap", np.nan) if hasattr(info, "get") else np.nan
+            if pd.isna(mcap) and not pd.isna(mcap_alt):
+                if debug_alt_prints < MAX_FASTINFO_DEBUG:
+                    print(f"    [DEBUG] {tk} found marketCap (camelCase)={mcap_alt}", flush=True)
+                    debug_alt_prints += 1
+                mcap = mcap_alt
+                debug_used_alt += 1
+            if pd.isna(mcap):
+                # Throttle noisy debug output
+                if debug_missing < MAX_FASTINFO_DEBUG:
+                    keys = []
+                    try:
+                        keys = list(info.keys()) if hasattr(info, "keys") else []
+                    except Exception:
+                        keys = ["<keys unavailable>"]
+                    print(
+                        f"    [DEBUG] fast_info missing market_cap for {tk}; "
+                        f"type={type(info)}, keys_sample={keys[:8]}, "
+                        f"marketCap_alt={mcap_alt}",
+                        flush=True,
+                    )
+                    debug_missing += 1
         except Exception as e:
             print(f"    [WARN] fast_info failed for {tk}: {e}", flush=True)
             mcap = np.nan
         size_rows.append({"ticker": tk, "mkt_cap_fastinfo": mcap})
 
     size_df = pd.DataFrame(size_rows).set_index("ticker")
+    print(
+        f"[DEBUG] fast_info market cap non-null: {size_df['mkt_cap_fastinfo'].notna().sum()} "
+        f"of {len(size_df)}",
+        flush=True,
+    )
+    print(
+        f"[DEBUG] fast_info camelCase marketCap used for {debug_used_alt} tickers",
+        flush=True,
+    )
 
     # Combine historical and fallback caps
     mkt_cap_df = pd.DataFrame(
@@ -687,6 +891,12 @@ def main():
 
     # 8) Assign size / IA / ROE buckets (single formation cross-section)
     print("Assigning size (2) and IA/ROE (3x3) buckets...", flush=True)
+    print(
+        f"[DEBUG] IA non-null={meta['ia'].notna().sum()}, "
+        f"ROE non-null={meta['roe'].notna().sum()}, "
+        f"mkt_cap non-null={meta['mkt_cap'].notna().sum()}",
+        flush=True,
+    )
     meta["i"] = assign_size_bucket(meta["mkt_cap"])
     meta["j"] = assign_terciles(meta["ia"])
     meta["k"] = assign_terciles(meta["roe"])
@@ -705,7 +915,7 @@ def main():
         raise RuntimeError("No securities with complete IA/ROE/size buckets.")
 
     # 9) Convert prices to daily returns over the window
-    ret_df = price_df[meta["ticker"].tolist()].pct_change().dropna(how="all")
+    ret_df = price_df[meta["ticker"].tolist()].pct_change(fill_method=None).dropna(how="all")
 
     # 10) 18 cell returns (equal-weighted)
     print("Building 18 (2x3x3) cell returns...", flush=True)

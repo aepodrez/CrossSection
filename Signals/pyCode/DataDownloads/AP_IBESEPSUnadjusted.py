@@ -11,13 +11,23 @@ How to run: python3 AP_IBESEPSUnadjusted.py
 """
 
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import refinitiv.data as rd
-from refinitiv.data import _configure as rd_config
 from dotenv import load_dotenv
 import warnings
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from utils.refinitiv_utils import (
+    convert_tickers_to_rics as resolve_tickers_to_rics,
+    initialize_refinitiv_platform_session,
+)
+from utils.ibes_utils import rd_get_data_with_refresh
 
 warnings.filterwarnings('ignore')
 
@@ -30,42 +40,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "AP_IBES_EPS_Unadj.parquet"
 DEBUG_MODE = False  # Set to True to limit the number of instruments
 MAX_INSTRUMENTS = 100  # Only used if DEBUG_MODE is True
-BATCH_SIZE = int(os.getenv("IBES_BATCH_SIZE", "20"))  # Smaller batches to avoid timeouts
+BATCH_SIZE = int(os.getenv("IBES_BATCH_SIZE", "10"))  # Smaller batches to avoid timeouts
 HTTP_REQUEST_TIMEOUT = int(os.getenv("RD_HTTP_TIMEOUT", "60"))  # seconds
-
-
-def initialize_refinitiv_session():
-    """
-    Initialize Refinitiv Data session using the Platform (RDP) with REFINITIV_APP_KEY.
-    """
-    app_key = os.getenv("REFINITIV_APP_KEY")
-    username = os.getenv("REFINITIV_USERNAME")
-    password = os.getenv("REFINITIV_PASSWORD")
-
-    if not app_key or not username or not password:
-        raise Exception("REFINITIV_APP_KEY, REFINITIV_USERNAME, and REFINITIV_PASSWORD must be set in your .env file.")
-
-    session_name = "rdp"
-    session_path = f"sessions.platform.{session_name}"
-
-    rd_config.set_param(f"{session_path}.app-key", app_key, auto_create=True)
-    rd_config.set_param(f"{session_path}.username", username, auto_create=True)
-    rd_config.set_param(f"{session_path}.password", password, auto_create=True)
-    rd_config.set_param("sessions.default", f"platform.{session_name}", auto_create=True)
-    rd_config.set_param("http.request-timeout", HTTP_REQUEST_TIMEOUT, auto_create=True)
-
-    try:
-        rd.open_session(f"platform.{session_name}")
-        test_df = rd.get_data(universe=["AAPL.O"], fields=["TR.CompanyName"])
-        if test_df is None:
-            raise Exception("Platform session opened but test request returned no data.")
-        print("Connected to Refinitiv Platform session")
-    except Exception as e:
-        try:
-            rd.close_session()
-        except Exception:
-            pass
-        raise Exception(f"Could not connect to Refinitiv Platform with APP_KEY. {e}")
+MAX_RETRIES = int(os.getenv("RD_MAX_RETRIES", "2"))
+RETRY_BACKOFF = int(os.getenv("RD_RETRY_BACKOFF", "2"))  # seconds
 
 
 def load_sp500_universe():
@@ -103,27 +81,12 @@ def load_sp500_universe():
 
 
 def convert_tickers_to_rics(tickers):
-    """
-    Convert ticker symbols to Refinitiv RIC format.
-    Uses heuristic mapping based on common exchange patterns.
-    """
-    print(f"\nConverting {len(tickers)} tickers to RIC format...")
-    
-    # Common NYSE tickers (financials, consumer staples, etc.)
-    nyse_tickers = {
-        'JPM', 'V', 'JNJ', 'WMT', 'PG', 'UNH', 'HD', 'DIS', 'BAC', 'MA',
-        'XOM', 'CVX', 'KO', 'PEP', 'T', 'VZ', 'MRK', 'ABT', 'TMO', 'DHR'
-    }
-    
-    rics = []
-    for ticker in tickers:
-        if ticker.upper() in nyse_tickers:
-            rics.append(f"{ticker.upper()}.N")
-        else:
-            rics.append(f"{ticker.upper()}.O")
-    
-    print(f"✓ Converted to {len(rics)} RICs")
-    return rics
+    return resolve_tickers_to_rics(
+        tickers,
+        batch_size=BATCH_SIZE,
+        max_retries=MAX_RETRIES,
+        retry_backoff=RETRY_BACKOFF,
+    )
 
 
 def get_active_universe():
@@ -216,19 +179,23 @@ def get_ibes_unadjusted_data(rics, start_date="2000-01-01", end_date=None):
                 end=" ",
             )
 
-            try:
-                df_batch = rd.get_data(universe=batch_rics, fields=fields, parameters=parameters)
+            df_batch = rd_get_data_with_refresh(
+                universe=batch_rics,
+                fields=fields,
+                parameters=parameters,
+                max_retries=MAX_RETRIES,
+                retry_backoff=RETRY_BACKOFF,
+                http_timeout=HTTP_REQUEST_TIMEOUT,
+                error_prefix="Error",
+                print_inline=True,
+            )
 
-                if df_batch is not None and len(df_batch) > 0:
-                    df_batch["fpi"] = fpi_code
-                    period_data.append(df_batch)
-                    print(f"Retrieved {len(df_batch)} records")
-                else:
-                    print("No data")
-
-            except Exception as e:
-                print(f"Error: {e}")
-                continue
+            if not df_batch.empty:
+                df_batch["fpi"] = fpi_code
+                period_data.append(df_batch)
+                print(f"Retrieved {len(df_batch)} records")
+            else:
+                print("No data")
 
         if len(period_data) > 0:
             df_period = pd.concat(period_data, ignore_index=True)
@@ -309,7 +276,7 @@ def main():
     print("IBES EPS Unadjusted Data Download from Refinitiv Platform")
     print("=" * 70)
 
-    initialize_refinitiv_session()
+    initialize_refinitiv_platform_session(http_timeout=HTTP_REQUEST_TIMEOUT)
     rics = get_active_universe()
 
     if DEBUG_MODE:

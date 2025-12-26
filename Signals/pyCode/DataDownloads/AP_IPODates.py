@@ -35,6 +35,7 @@ NYSE_IPO_URL = "https://www.nyse.com/ipo-center"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/json,text/html",
+    "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.nasdaq.com/",
 }
 
@@ -104,51 +105,136 @@ def load_ritter_base() -> pd.DataFrame:
 
 
 def fetch_nasdaq_ipos() -> pd.DataFrame:
-    """Best-effort fetch from Nasdaq calendar JSON."""
+    """Best-effort fetch from Nasdaq calendar JSON (structure occasionally changes)."""
     resp = requests.get(NASDAQ_IPO_URL, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     data = resp.json()
-    rows = data.get("data", {}).get("rows", []) or []
+    rows: list[dict] = []
+
+    def collect(obj):
+        """Recursively collect row dicts from nested structures."""
+        if isinstance(obj, list):
+            if obj and isinstance(obj[0], dict):
+                rows.extend(obj)
+            else:
+                for item in obj:
+                    collect(item)
+        elif isinstance(obj, dict):
+            for val in obj.values():
+                collect(val)
+
+    collect(data.get("data", {}))
+    if not rows:
+        collect(data)
+
+    cols = ["company_name", "ticker", "ipo_date", "exchange", "source", "provisional"]
+    ticker_keys = ["symbol", "ticker", "proposedTickerSymbol", "proposedTicker", "tickerSymbol"]
+    name_keys = ["companyName", "company", "name", "issuerName"]
+    date_keys = [
+        "offerDate",
+        "pricingDate",
+        "expectedPricingDate",
+        "expectedPricedDate",
+        "expectedDate",
+        "pricedDate",
+        "date",
+    ]
     out = []
     for row in rows:
+        if not isinstance(row, dict):
+            continue
+        def pick(keys):
+            for k in keys:
+                if k in row and row[k]:
+                    return row[k]
+            return None
+
+        ticker = (pick(ticker_keys) or "").strip().upper()
+        ipo_date = pd.to_datetime(pick(date_keys), errors="coerce")
+        company_name = (pick(name_keys) or "").strip()
+        exchange = (row.get("exchange") or row.get("market") or "NASDAQ").strip().upper()
         out.append(
             {
-                "company_name": row.get("companyName", ""),
-                "ticker": (row.get("symbol") or "").upper(),
-                "ipo_date": pd.to_datetime(row.get("offerDate"), errors="coerce"),
-                "exchange": "NASDAQ",
+                "company_name": company_name,
+                "ticker": ticker,
+                "ipo_date": ipo_date,
+                "exchange": exchange,
                 "source": "nasdaq_calendar",
                 "provisional": True,
             }
         )
-    return pd.DataFrame(out)
+
+    return pd.DataFrame(out, columns=cols)
 
 
 def fetch_nyse_ipos() -> pd.DataFrame:
     """Best-effort fetch from NYSE IPO HTML table."""
-    tables = pd.read_html(NYSE_IPO_URL)
+    cols = ["company_name", "ticker", "ipo_date", "exchange", "source", "provisional"]
+    try:
+        tables = pd.read_html(NYSE_IPO_URL)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
     if not tables:
-        return pd.DataFrame(columns=["company_name", "ticker", "ipo_date", "exchange", "source", "provisional"])
-    df = tables[0].rename(
-        columns={"Company": "company_name", "Symbol": "ticker", "Pricing Date": "ipo_date"}
-    )
-    df["exchange"] = "NYSE"
-    df["source"] = "nyse_calendar"
-    df["provisional"] = True
-    return df[["company_name", "ticker", "ipo_date", "exchange", "source", "provisional"]]
+        return pd.DataFrame(columns=cols)
+
+    rename_map = {
+        "Company": "company_name",
+        "Company Name": "company_name",
+        "Symbol": "ticker",
+        "Ticker": "ticker",
+        "Pricing Date": "ipo_date",
+        "Expected Pricing Date": "ipo_date",
+        "Offer Date": "ipo_date",
+    }
+    selected = None
+    required = {"company_name", "ticker", "ipo_date"}
+    for table in tables:
+        df = table.rename(columns=rename_map)
+        if required.issubset(df.columns):
+            selected = df
+            break
+
+    if selected is None:
+        return pd.DataFrame(columns=cols)
+
+    ordered_required = ["company_name", "ticker", "ipo_date"]
+    selected = selected[ordered_required].assign(exchange="NYSE", source="nyse_calendar", provisional=True)
+    return selected[cols]
 
 
-def load_live_ipos() -> pd.DataFrame:
+def load_live_ipos() -> tuple[pd.DataFrame, dict]:
     """Collect live IPOs from available calendars."""
     dfs = []
-    for fetcher in (fetch_nasdaq_ipos, fetch_nyse_ipos):
+    source_counts: dict = {}
+    fetchers = (("nasdaq", fetch_nasdaq_ipos), ("nyse", fetch_nyse_ipos))
+    for source_name, fetcher in fetchers:
         try:
-            dfs.append(fetcher())
+            df = fetcher()
+            source_counts[source_name] = len(df)
+            if not df.empty:
+                dfs.append(df)
         except Exception as exc:  # pragma: no cover
-            print(f"⚠️  Live IPO fetch failed: {exc}")
+            source_counts[source_name] = f"error: {exc}"
+            print(f"⚠️  Live IPO fetch failed for {source_name.upper()}: {exc}")
+
     if not dfs:
-        return pd.DataFrame(columns=["company_name", "ticker", "ipo_date", "exchange", "source", "provisional"])
+        return pd.DataFrame(columns=["company_name", "ticker", "ipo_date", "exchange", "source", "provisional"]), source_counts
+
     live = pd.concat(dfs, ignore_index=True)
+    # Ensure expected columns exist even when upstream fetchers return empty frames
+    defaults = {
+        "company_name": "",
+        "ticker": "",
+        "ipo_date": pd.NaT,
+        "exchange": "",
+        "source": "",
+        "provisional": True,
+    }
+    for col, default in defaults.items():
+        if col not in live.columns:
+            live[col] = default
+
     live["ticker"] = live["ticker"].fillna("").str.upper()
     live["ipo_date"] = pd.to_datetime(live["ipo_date"], errors="coerce")
     live = live.dropna(subset=["ticker", "ipo_date"])
@@ -166,7 +252,7 @@ def load_live_ipos() -> pd.DataFrame:
         "source",
         "provisional",
     ]
-    return live[cols]
+    return live[cols], source_counts
 
 
 def attach_permno(df: pd.DataFrame, ticker_map: pd.DataFrame) -> pd.DataFrame:
@@ -191,12 +277,14 @@ def build_ap_ipodates():
     print(f"✓ Ritter IPO rows: {len(base):,}")
 
     # Live IPO data (provisional)
-    live = load_live_ipos()
+    live, source_counts = load_live_ipos()
+    nasdaq_count = source_counts.get("nasdaq", 0)
+    nyse_count = source_counts.get("nyse", 0)
     if not live.empty:
         live = attach_permno(live, ticker_map)
-        print(f"✓ Live IPO rows: {len(live):,}")
+        print(f"✓ Live IPO rows: {len(live):,} (Nasdaq={nasdaq_count}, NYSE={nyse_count})")
     else:
-        print("⚠️  No live IPO rows fetched")
+        print(f"⚠️  No live IPO rows fetched (Nasdaq={nasdaq_count}, NYSE={nyse_count})")
 
     combined = pd.concat([base, live], ignore_index=True)
 

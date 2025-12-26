@@ -24,7 +24,11 @@ import threading
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
 from config import SCRIPT_TIMEOUT_MINUTES
+
+# Load environment variables
+load_dotenv()
 
 def setup_logging():
     """Initialize error tracking and console logging"""
@@ -230,6 +234,112 @@ def save_error_log(error_log, console_log):
     print(f"  CSV: {csv_path}")
     print(f"  TXT: {txt_path}")
 
+def check_environment():
+    """Verify required environment variables are set in .env file"""
+    print("\n" + "=" * 60)
+    print("Checking Environment Variables (.env file)")
+    print("=" * 60)
+    
+    # Required environment variables by script
+    required_vars = {
+        "FRED_API_KEY": {
+            "required_by": ["AP_VIX.py", "AP_GNPDeflator.py", "AP_TreasuryBill3M.py", "AP_QFactorModel.py"],
+            "description": "FRED API key for economic data",
+            "get_key_url": "https://fred.stlouisfed.org/docs/api/api_key.html"
+        },
+        "REFINITIV_APP_KEY": {
+            "required_by": ["AP_IBESEPSAdjusted.py", "AP_IBESEPSUnadjusted.py"],
+            "description": "Refinitiv Platform App Key",
+            "get_key_url": None
+        },
+        "REFINITIV_USERNAME": {
+            "required_by": ["AP_IBESEPSAdjusted.py", "AP_IBESEPSUnadjusted.py"],
+            "description": "Refinitiv Platform Username",
+            "get_key_url": None
+        },
+        "REFINITIV_PASSWORD": {
+            "required_by": ["AP_IBESEPSAdjusted.py", "AP_IBESEPSUnadjusted.py"],
+            "description": "Refinitiv Platform Password",
+            "get_key_url": None
+        },
+        "BEA_API_KEY": {
+            "required_by": ["AP_BEAInputOutput.py"],
+            "description": "BEA API key for input-output tables",
+            "get_key_url": "https://apps.bea.gov/API/signup/"
+        },
+        "EIKON_APP_KEY": {
+            "required_by": ["AP_IBESRecommendations.py", "AP_IBESUnadjustedActuals.py"],
+            "description": "Eikon/LSEG API App Key",
+            "get_key_url": None
+        }
+    }
+    
+    # Optional environment variables (with defaults)
+    optional_vars = {
+        "SEC_EMAIL": {
+            "required_by": ["AP_BuildFFPortfolios.py"],
+            "description": "Email for SEC EDGAR identity (defaults provided)",
+            "default": "your_email@example.com"
+        },
+        "EDGAR_IDENTITY": {
+            "required_by": ["AP_CompustatAnnual.py", "AP_QFactorModel.py"],
+            "description": "EDGAR identity string (defaults provided)",
+            "default": "Your Name your.email@example.com"
+        },
+        "IBES_BATCH_SIZE": {
+            "required_by": ["AP_IBESEPSAdjusted.py", "AP_IBESEPSUnadjusted.py"],
+            "description": "Batch size for IBES requests (default: 20)",
+            "default": "20"
+        },
+        "RD_HTTP_TIMEOUT": {
+            "required_by": ["AP_IBESEPSAdjusted.py", "AP_IBESEPSUnadjusted.py"],
+            "description": "HTTP timeout for Refinitiv requests (default: 60)",
+            "default": "60"
+        }
+    }
+    
+    missing_required = []
+    missing_optional = []
+    
+    # Check required variables
+    for var_name, var_info in required_vars.items():
+        value = os.getenv(var_name)
+        if not value or value.strip() == "":
+            missing_required.append((var_name, var_info))
+            print(f"❌ {var_name}: NOT SET")
+            print(f"   Required by: {', '.join(var_info['required_by'])}")
+            print(f"   Description: {var_info['description']}")
+            if var_info['get_key_url']:
+                print(f"   Get key: {var_info['get_key_url']}")
+        else:
+            print(f"✓ {var_name}: SET (length: {len(value)})")
+    
+    # Check optional variables
+    for var_name, var_info in optional_vars.items():
+        value = os.getenv(var_name)
+        if not value or value.strip() == "":
+            missing_optional.append((var_name, var_info))
+            print(f"⚠️  {var_name}: NOT SET (will use default: {var_info['default']})")
+        else:
+            print(f"✓ {var_name}: SET")
+    
+    # Summary
+    print("\n" + "-" * 60)
+    if missing_required:
+        print(f"❌ {len(missing_required)} REQUIRED environment variable(s) missing!")
+        print("\nPlease add the following to your .env file:")
+        for var_name, var_info in missing_required:
+            print(f"  {var_name}=your_value_here")
+            if var_info['get_key_url']:
+                print(f"    # Get key at: {var_info['get_key_url']}")
+        print("\n⚠️  Scripts that require these variables will fail.")
+        return False
+    else:
+        print("✓ All required environment variables are set!")
+        if missing_optional:
+            print(f"⚠️  Note: {len(missing_optional)} optional variable(s) using defaults")
+        return True
+
 def check_optional_files():
     """Verify availability of optional preprocessed data files"""
     print("Checking for optional preprocessed files...")
@@ -259,6 +369,16 @@ def main():
     print("=" * 60)
     print("AP Data Download Script - Alternative Provider Downloads")
     print("=" * 60)
+    
+    # Check environment variables first
+    env_ok = check_environment()
+    if not env_ok:
+        print("\n" + "=" * 60)
+        print("⚠️  WARNING: Missing required environment variables!")
+        print("Some scripts may fail. Continue anyway? (y/n)")
+        print("=" * 60)
+        # For automated runs, continue but warn
+        print("Continuing with execution (scripts will fail if vars missing)...")
     
     # Check for optional files
     check_optional_files()
