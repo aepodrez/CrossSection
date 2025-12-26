@@ -266,11 +266,6 @@ def check_environment():
             "required_by": ["AP_BEAInputOutput.py"],
             "description": "BEA API key for input-output tables",
             "get_key_url": "https://apps.bea.gov/API/signup/"
-        },
-        "EIKON_APP_KEY": {
-            "required_by": ["AP_IBESRecommendations.py", "AP_IBESUnadjustedActuals.py"],
-            "description": "Eikon/LSEG API App Key",
-            "get_key_url": None
         }
     }
     
